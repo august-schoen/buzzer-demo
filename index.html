@@ -371,6 +371,8 @@ input{font:inherit;color:inherit}
       <div class="backrow"><button class="backbtn" id="c-back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg></button><div class="vtitle">Klassisch</div></div>
       <div class="eyebrow"><span class="dot"></span> Next up</div>
       <div id="hero" class="hero"></div>
+      <div class="eyebrow"><span class="dot"></span> Live — alle Klassisch-Einsätze</div>
+      <div id="feed-classic" class="feed" style="height:212px;overflow-y:auto;border-top:1px solid var(--line2);border-bottom:1px solid var(--line2);margin-bottom:22px;scrollbar-width:none"></div>
       <div class="eyebrow">Next up — noch offen</div>
       <div id="hero2" class="hero"></div>
       <div class="eyebrow">Alle Buzzer</div>
@@ -456,9 +458,13 @@ const RAKE=0;               // Demo: keine Gebühr ausgewiesen — Monetarisieru
 const CALIB=75, MINMS=92;   // Geräte-Latenz-Kalibrierung (ms)
 const PERIODS={demo:240000, real:1800000};
 const NAMES=["NovaStrike","Mike_87","luna.exe","QuickFingerz","BlitzKid","jonas_hh","Vexx","MsMillisekunde","turbo_tim","GhostTap","Kira","FlashF1n","NeoJ","SpeedyGnz","0xRapid","HannaBanana","ClickCzar","piXelPete","MiaMoneyy","TapGod","Chr1s","ZoeZoom","Rudi_R","VelvetViper","OTTO","fastlane_","JuliaW","BigPotBob","tiny_tina","Maximus","ping_9ms","AnnikaZ","Der_Daumen","Ricochet","MoneyMika","SnapZ","Elif_x","Timo_x","LagLordLee","frieda.f","BeepBoop","Cassia","Nordlicht","TTV_Blur","paul_pkr","Skrrt","Wrz","Dash_Dee"];
-const RND=100,JP=101,PRIV=102;      // Spezial-Buzzer: Random, Jackpot, Privat
-const RND_STAKE=5,JP_STAKE=10;
-const RND_PERIOD=300000;            // Random-Fenster: 5 min
+const JP=101,PRIV=102;              // Spezial-Buzzer: Jackpot, Privat
+const JP_STAKE=10;
+const RND_BASE=110;                 // Random-Pools: Indizes 110–115
+const RND_STAKES=[1,5,10,20,50,100];
+const RND_TARGET={1:60,5:45,10:34,20:24,50:14,100:9};
+const isRnd=i=>i>=RND_BASE&&i<RND_BASE+RND_STAKES.length;
+const RND_PERIOD=180000;            // Random-Fenster: 3 min, GO zufällig zwischen 0:20 und 2:20
 const FRIENDS=["Jonas","Mara","Leon","Zoe","Felix","Nina","Tom","Lea","Paul","Emma","Ben","Mia"];
 const HYPE=["let's gooo 🔥","heute hol ich den Pot","wer ist bereit?","mein Daumen zittert schon","easy win incoming","alle zu langsam hier 😤","letzte Runde 12 ms zu spät 😭","POT IST FETT 💰","ich fühl's heute","nicht blinzeln, Leute","gleich geht's los!!","der Pot wächst 👀","viel Glück allen 🍀","niemand schlägt meine 180 ms","Koffein kickt ⚡","Finger gestreckt?","noch jemand rein hier?","dieser Pot gehört mir"];
 
@@ -494,10 +500,10 @@ function seedOf(i,c,salt){ return (Math.imul(i+1,2654435761)^Math.imul((c%100000
 const period=()=>PERIODS[S.settings.tempo]||PERIODS.demo;
 const offsetOf=i=>Math.round(i*period()/N);
 const modeOf=stake=>(stake>=200&&stake<=1000)?"top3":"wta";
-const stakeOf=i=>i===RND?RND_STAKE:i===JP?JP_STAKE:i===PRIV?(S.private?S.private.stake:0):STAKES[i];
+const stakeOf=i=>isRnd(i)?RND_STAKES[i-RND_BASE]:i===JP?JP_STAKE:i===PRIV?(S.private?S.private.stake:0):STAKES[i];
 const modeOfIdx=i=>i>=100?"wta":modeOf(STAKES[i]);
-const periodOf=i=>i===RND?RND_PERIOD:i===JP?86400000:i===PRIV?0:period();
-function labelOf(i){ return i===RND?"Random":i===JP?"JACKPOT":i===PRIV?"Privat":fmtStakeShort(STAKES[i])+"€-Pot"; }
+const periodOf=i=>isRnd(i)?RND_PERIOD:i===JP?86400000:i===PRIV?0:period();
+function labelOf(i){ return isRnd(i)?"Random":i===JP?"JACKPOT":i===PRIV?"Privat":fmtStakeShort(STAKES[i])+"€-Pot"; }
 function phaseOf(t,tClose,tCount,tGoBase,tGo){
   if(t>=tGo+3000)return "result";
   if(t>=tGo)return "live";
@@ -506,11 +512,12 @@ function phaseOf(t,tClose,tCount,tGoBase,tGo){
   if(t>=tClose)return "locked";
   return "open";
 }
-function timesRnd(t){
-  const P=RND_PERIOD,c=Math.floor(t/P),start=c*P,end=start+P;
-  const tGo=start+25000+rng(seedOf(RND,c,11))()*(P-70000);
+function timesRnd(i,t){
+  const P=RND_PERIOD,off=Math.round((i-RND_BASE)*P/RND_STAKES.length);
+  const c=Math.floor((t-off)/P),start=c*P+off,end=start+P;
+  const tGo=start+20000+rng(seedOf(i,c,11))()*(P-60000);
   const tClose=tGo-1200,tCount=tGo-1100,tGoBase=tGo-1000;
-  return {i:RND,c,start,end,tClose,tCount,tGoBase,tGo,phase:phaseOf(t,tClose,tCount,tGoBase,tGo),key:RND+":"+c};
+  return {i,c,start,end,tClose,tCount,tGoBase,tGo,phase:phaseOf(t,tClose,tCount,tGoBase,tGo),key:i+":"+c};
 }
 function timesJp(t){
   const d=new Date(t);
@@ -531,7 +538,7 @@ function timesPriv(t){
   return {i:PRIV,c,start,end,tClose,tCount,tGoBase,tGo,phase:phaseOf(t,tClose,tCount,tGoBase,tGo),key:PRIV+":"+c};
 }
 function times(i,t){
-  if(i===RND)return timesRnd(t);
+  if(isRnd(i))return timesRnd(i,t);
   if(i===JP)return timesJp(t);
   if(i===PRIV)return timesPriv(t);
   const P=period(),off=offsetOf(i);
@@ -548,7 +555,7 @@ function times(i,t){
 }
 function targetOf(i,c){
   const r=rng(seedOf(i,c,22))();
-  if(i===RND)return Math.round(28+r*45);
+  if(isRnd(i))return Math.max(3,Math.round((RND_TARGET[stakeOf(i)]||10)*(0.7+r*0.6)));
   if(i===JP)return Math.round(900+r*1700);
   if(i===PRIV)return 3+Math.floor(r*5); // 3–7 Freunde
   const base=TARGET[STAKES[i]]||6;
@@ -556,7 +563,7 @@ function targetOf(i,c){
 }
 function joinedAt(i,T,t){
   let winEnd=T.tClose,exp=0.6;
-  if(i===RND)exp=0.75;
+  if(isRnd(i))exp=0.75;
   else if(i===JP)exp=2.4;                                   // Pot schwillt Richtung Abend an
   else if(i===PRIV){ winEnd=Math.min(T.tClose,T.start+120000); exp=0.5; } // Freunde kommen in ~2 min
   const p=clamp((t-T.start)/Math.max(1,winEnd-T.start),0,1);
@@ -612,11 +619,12 @@ function settleUser(i,c,userMs){ // userMs: number | null (verpasst) | "dq"
 
 /* ---------- Chat / Feed ---------- */
 const chats={}; for(let i=0;i<N;i++)chats[i]=[];
-chats[RND]=[];chats[JP]=[];chats[PRIV]=[];
+for(let k=0;k<RND_STAKES.length;k++)chats[RND_BASE+k]=[];
+chats[JP]=[];chats[PRIV]=[];
 const FEED=[];
 function activeChatEl(i){
   if(currentView==="detail"&&currentDetail===i)return $("#d-chat");
-  if(currentView==="random"&&i===RND)return $("#rd-chat");
+  if(currentView==="random"&&i===rdPool)return $("#rd-chat");
   if(currentView==="jack"&&i===JP)return $("#jp-chat");
   if(currentView==="priv"&&i===PRIV)return $("#pv-chat");
   return null;
@@ -660,6 +668,7 @@ function pushFeed(m){
   m.t=m.t||now();
   FEED.push(m); if(FEED.length>100)FEED.shift();
   if(currentView==="menu")appendTo($("#feed"),msgNode(m,"feed"),100);
+  if(currentView==="home"&&m.i!=null&&m.i<N)appendTo($("#feed-classic"),msgNode(m,"feed"),100);
 }
 function pushBoth(i,m){
   pushChat(i,Object.assign({},m));
@@ -672,7 +681,8 @@ const lastPhase={},joinCache={},lastJoinMsgAt={},announced={},notified={};
 let engaged=null;
 function activeIdx(){
   const a=[]; for(let i=0;i<N;i++)a.push(i);
-  a.push(RND,JP);
+  for(let k=0;k<RND_STAKES.length;k++)a.push(RND_BASE+k);
+  a.push(JP);
   if(S.private)a.push(PRIV);
   return a;
 }
@@ -707,7 +717,7 @@ function tick(){
   if(Object.keys(joinCache).length>400){ for(const k of Object.keys(joinCache).slice(0,200))delete joinCache[k]; }
   checkTakeover(t);
   checkNotify(t);
-  const hypeIdx=currentView==="detail"?currentDetail:currentView==="random"?RND:currentView==="jack"?JP:currentView==="priv"&&S.private?PRIV:null;
+  const hypeIdx=currentView==="detail"?currentDetail:currentView==="random"?rdPool:currentView==="jack"?JP:currentView==="priv"&&S.private?PRIV:null;
   if(hypeIdx!=null&&Math.random()<0.028)
     pushChat(hypeIdx,{type:"hype",name:hypeIdx===PRIV?pick(FRIENDS):pick(NAMES),text:pick(HYPE)});
   // UI auch ohne rAF aktuell halten (Energiesparmodus / gedrosselte Tabs)
@@ -734,7 +744,7 @@ function checkNotify(t){
   for(const key of Object.keys(S.bets)){
     const b=S.bets[key]; if(b.done)continue;
     const [i,c]=key.split(":").map(Number);
-    if(i===RND)continue; // Random verrät seine Zeit nicht
+    if(isRnd(i))continue; // Random verrät seine Zeit nicht
     const T=times(i,t); if(!T||T.key!==key)continue;
     const d=T.tGo-t;
     if(d<120000&&d>90000&&!notified[key+":2m"]){ notified[key+":2m"]=1; notify("BUZZER","Dein "+labelOf(i)+" startet in 2 Minuten — Pot "+fmtEUR(potOf(i,T,t)),key+"2m"); }
@@ -777,7 +787,7 @@ function checkTakeover(t){
       if(T.c>c){ settleUser(i,c,null); toast("Runde verpasst — Einsatz verloren ("+fmtEUR(bet.stake||stakeOf(i))+")"); }
       continue;
     }
-    const soon=(T.phase==="open"&&T.tClose-t<8000)||(i===RND&&T.phase==="open"); // Random: sofort in Bereitschaft
+    const soon=(T.phase==="open"&&T.tClose-t<8000)||(isRnd(i)&&T.phase==="open"); // Random: sofort in Bereitschaft
     if(soon||T.phase==="locked"||T.phase==="countdown"||T.phase==="suspense"||T.phase==="live"){
       engage(i,T); return;
     }
@@ -785,7 +795,7 @@ function checkTakeover(t){
 }
 function engage(i,T){
   engaged={i,c:T.c,key:T.key,state:"wait",tapped:false,goPerf:0,userMs:null,res:null,goTimer:null,missTimer:null,lastCount:null};
-  if(i===RND){ if(currentView!=="random")navigate("random"); }
+  if(isRnd(i)){ rdPool=i; if(currentView!=="random")navigate("random"); }
   else if(i===JP){ if(currentView!=="jack")navigate("jack"); }
   else if(i===PRIV){ if(currentView!=="priv")navigate("priv"); }
   else if(currentView!=="detail"||currentDetail!==i)navigate("detail",i);
@@ -799,8 +809,8 @@ const ovEl=$("#ov");
 function renderOverlayShell(i,T){
   const t=now();
   ovEl.classList.remove("go-bg");
-  const title=i===RND?"Random-Buzzer · "+fmtEUR(RND_STAKE):i===JP?"🏆 JACKPOT · "+fmtEUR(JP_STAKE):i===PRIV?"Privater Buzzer · "+fmtEUR(stakeOf(PRIV)):fmtEUR(STAKES[i])+"-Buzzer";
-  const hint=i===RND
+  const title=isRnd(i)?"Random-Buzzer · "+fmtEUR(stakeOf(i)):i===JP?"🏆 JACKPOT · "+fmtEUR(JP_STAKE):i===PRIV?"Privater Buzzer · "+fmtEUR(stakeOf(PRIV)):fmtEUR(STAKES[i])+"-Buzzer";
+  const hint=isRnd(i)
     ?'GO kann <b style="color:#fff">JEDEN MOMENT</b> kommen — tipp erst, wenn der Bildschirm grün wird.<br>Jeder Tap davor = Fehlstart, Einsatz weg.'
     :'Warte auf <b style="color:#fff">GO!</b> — dann tipp irgendwo auf den Bildschirm.<br>Zu früh getippt = Fehlstart, Einsatz weg.';
   ovEl.innerHTML=
@@ -895,7 +905,7 @@ ovEl.addEventListener("pointerdown",e=>{
     setTimeout(()=>finishRound(ms,"ok"),1300);
   }else if(engaged.state==="wait"){
     const T=times(engaged.i,now());
-    if(engaged.i===RND||(T&&(T.phase==="countdown"||T.phase==="suspense"))){ e.preventDefault(); falseStart(); }
+    if(isRnd(engaged.i)||(T&&(T.phase==="countdown"||T.phase==="suspense"))){ e.preventDefault(); falseStart(); }
     else{ const c=$("#ov-center"); if(c){c.classList.remove("shake"); void c.offsetWidth; c.classList.add("shake");} }
   }
 });
@@ -910,6 +920,7 @@ function navigate(v,arg){
   if(v==="detail"){ currentDetail=arg; renderDetail(arg); }
   else currentDetail=null;
   if(v==="menu")renderFeed();
+  if(v==="home")renderFeedClassic();
   if(v==="random")renderRandom();
   if(v==="jack")renderJack();
   if(v==="priv")renderPriv();
@@ -1050,7 +1061,7 @@ function updateMyBets(t){
   for(const key of Object.keys(S.bets)){
     const b=S.bets[key]; if(b.done)continue;
     const [i,c]=key.split(":").map(Number);
-    if(!((i>=0&&i<N)||i===RND||i===JP||i===PRIV))continue;
+    if(!((i>=0&&i<N)||isRnd(i)||i===JP||i===PRIV))continue;
     const T=times(i,t); if(!T||T.key!==key)continue;
     act.push({i,T});
   }
@@ -1062,9 +1073,9 @@ function updateMyBets(t){
     row.innerHTML="";
     for(const a of act){
       const el=document.createElement("div"); el.className="mybet";
-      const lbl=a.i===RND?"🎲 5 €":a.i===JP?"🏆 10 €":a.i===PRIV?"👥 "+fmtStakeShort(stakeOf(PRIV))+" €":fmtStakeShort(STAKES[a.i])+" €";
+      const lbl=isRnd(a.i)?"🎲 "+fmtStakeShort(stakeOf(a.i))+" €":a.i===JP?"🏆 10 €":a.i===PRIV?"👥 "+fmtStakeShort(stakeOf(PRIV))+" €":fmtStakeShort(STAKES[a.i])+" €";
       el.innerHTML='<span class="s">'+lbl+'</span><span class="p" data-p="'+a.T.key+'">–</span><span class="c" data-c="'+a.T.key+'">–</span>';
-      el.addEventListener("click",()=>{ a.i===RND?navigate("random"):a.i===JP?navigate("jack"):a.i===PRIV?navigate("priv"):navigate("detail",a.i); });
+      el.addEventListener("click",()=>{ if(isRnd(a.i)){rdPool=a.i;navigate("random");} else a.i===JP?navigate("jack"):a.i===PRIV?navigate("priv"):navigate("detail",a.i); });
       row.appendChild(el);
     }
   }
@@ -1073,7 +1084,7 @@ function updateMyBets(t){
     if(p)p.textContent=fmtEUR(potOf(a.i,a.T,t));
     if(c){
       const d=a.T.tGo-t;
-      if(a.i===RND){ c.textContent="läuft …"; c.classList.add("hot"); }
+      if(isRnd(a.i)){ c.textContent="läuft …"; c.classList.add("hot"); }
       else{ c.textContent="GO in "+(d>3600000?fmtLong(d):mmss(d)); c.classList.toggle("hot",d<15000); }
     }
   }
@@ -1110,8 +1121,11 @@ function updateMenu(t){
   const h=heroPick(t);
   if(h){ const Tc=times(h.i,t); const dc=Tc.tGo-t;
     $("#tc-sub").innerHTML="19 Buzzer · 1 € bis 20K € · Next GO in "+(dc<-3200?"…":'<span class="'+(dc<15000?"hot":"ok")+'">'+mmss(Math.max(0,dc))+"</span>"); }
-  const TR=timesRnd(t);
-  $("#tr-sub").innerHTML=fmtEUR(RND_STAKE)+" fix · GO irgendwann in 5 min · Pot <b>"+fmtEUR(potOf(RND,TR,t))+"</b>";
+  let rndSum=0,rndOpen=0;
+  for(let k=0;k<RND_STAKES.length;k++){ const ri=RND_BASE+k,TR=timesRnd(ri,t); if(TR.phase==="open"){rndOpen++;rndSum+=potOf(ri,TR,t);} }
+  $("#tr-sub").innerHTML=rndOpen>0
+    ?"1–100 € · GO kommt zufällig · Pots <b>"+fmtEUR(rndSum)+"</b>"
+    :'1–100 € · <span class="hot">zur Zeit nicht verfügbar</span>';
   if(S.private){
     const TP=timesPriv(t);
     if(TP)$("#tp-sub").innerHTML=TP.phase==="result"?'<span class="ok">Runde gelaufen 🏆</span>':'<span class="ok">Läuft</span> · GO in '+mmss(TP.tGo-t)+" · Pot <b>"+fmtEUR(potOf(PRIV,TP,t))+"</b>";
@@ -1143,45 +1157,55 @@ function wireChat(pfx,idx){
   chat.scrollTop=chat.scrollHeight;
 }
 
-/* ---------- Random-Buzzer ---------- */
+/* ---------- Random-Buzzer (Pools 1–100 €) ---------- */
 const rdRefs={};
+let rdPool=RND_BASE+1; // Standard: 5 €
 function renderRandom(){
   views.random.innerHTML=
     '<div class="backrow"><button class="backbtn" id="rd-back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg></button>'+
     '<div class="vtitle">🎲 Random</div><div id="d-mode">Winner takes all</div></div>'+
-    '<div class="explain">Fester Einsatz '+fmtEUR(RND_STAKE)+' — der Buzzer geht <b style="color:var(--text)">irgendwann in den nächsten 5 Minuten</b> los. Niemand kennt den Moment. Sobald du drin bist, bleib bereit: Jeder Tap vor dem GO ist ein Fehlstart.</div>'+
+    '<div class="explain">Wähl deinen Einsatz — der Buzzer geht <b style="color:var(--text)">irgendwann in den nächsten Minuten</b> los. Niemand kennt den Moment. Sobald du drin bist: Jeder Tap vor dem GO ist ein Fehlstart.</div>'+
+    '<div class="eyebrow">Einsatz</div><div class="choice" id="rd-stakes" style="grid-template-columns:repeat(6,1fr)"></div>'+
     '<div id="d-stage"><button class="buzzer standalone" id="rd-buzzer"><span class="b1"></span><span class="b2"></span></button>'+
     '<div id="d-stats">'+
       '<div class="dstat"><div class="v gold" id="rd-pot">–</div><div class="k">Pot</div></div>'+
       '<div class="dstat"><div class="v" id="rd-pl">–</div><div class="k">Spieler</div></div>'+
-      '<div class="dstat"><div class="v" id="rd-st">🎲</div><div class="k" id="rd-stk">Status</div></div>'+
+      '<div class="dstat"><div class="v" id="rd-st">🎲</div><div class="k">Status</div></div>'+
     "</div></div>"+
-    chatBlock("rd","Money-Chat · Random");
+    chatBlock("rd","Money-Chat · Random "+fmtEUR(stakeOf(rdPool)));
   $("#rd-back").addEventListener("click",()=>navigate("menu"));
+  const box=$("#rd-stakes");
+  RND_STAKES.forEach((s,k)=>{
+    const b=document.createElement("button");
+    b.textContent=fmtStakeShort(s)+" €";
+    if(RND_BASE+k===rdPool)b.classList.add("sel");
+    b.addEventListener("click",()=>{ rdPool=RND_BASE+k; renderRandom(); });
+    box.appendChild(b);
+  });
   rdRefs.buzzer=$("#rd-buzzer"); rdRefs.b1=rdRefs.buzzer.querySelector(".b1"); rdRefs.b2=rdRefs.buzzer.querySelector(".b2");
   rdRefs.pot=$("#rd-pot"); rdRefs.pl=$("#rd-pl"); rdRefs.st=$("#rd-st"); rdRefs.lastBtn=null;
   betGuard=performance.now()+400;
-  rdRefs.buzzer.addEventListener("click",()=>tryBet(RND));
-  wireChat("rd",RND);
+  rdRefs.buzzer.addEventListener("click",()=>tryBet(rdPool));
+  wireChat("rd",rdPool);
 }
 function updateRandom(t){
   if(currentView!=="random")return;
-  const T=timesRnd(t);
-  if(rdRefs.pot)rdRefs.pot.textContent=fmtEUR(potOf(RND,T,t));
-  if(rdRefs.pl)rdRefs.pl.textContent=joinedAt(RND,T,t)+(S.bets[T.key]?1:0);
+  const T=timesRnd(rdPool,t);
+  const open=T.phase==="open";
+  if(rdRefs.pot)rdRefs.pot.textContent=open?fmtEUR(potOf(rdPool,T,t)):"–";
+  if(rdRefs.pl)rdRefs.pl.textContent=open?String(joinedAt(rdPool,T,t)+(S.bets[T.key]?1:0)):"–";
   if(rdRefs.st){
-    if(T.phase==="result"){rdRefs.st.textContent="🏆";}
-    else if(T.phase==="live"){rdRefs.st.textContent="GO!";rdRefs.st.className="v hot";}
-    else{rdRefs.st.textContent="🎲";rdRefs.st.className="v";}
+    if(open){rdRefs.st.textContent="OFFEN";rdRefs.st.className="v";rdRefs.st.style.color="var(--green)";}
+    else{rdRefs.st.textContent="PAUSE";rdRefs.st.className="v";rdRefs.st.style.color="var(--muted2)";}
   }
   const joined=!!S.bets[T.key]&&!S.bets[T.key].done;
-  const bKey=T.phase+"|"+joined;
+  const bKey=T.phase+"|"+joined+"|"+rdPool;
   if(rdRefs.lastBtn!==bKey){
     rdRefs.lastBtn=bKey;
     rdRefs.buzzer.className="buzzer standalone";
-    if(T.phase==="result"){ rdRefs.buzzer.className+=" locked"; rdRefs.b1.textContent="🏆"; rdRefs.b2.textContent=resolveRound(RND,T.c).winner; }
-    else if(joined){ rdRefs.buzzer.className+=" joined"; rdRefs.b1.textContent="DRIN ✓"; rdRefs.b2.textContent="BLEIB BEREIT"; }
-    else{ rdRefs.b1.textContent=fmtEUR(RND_STAKE); rdRefs.b2.textContent="TIPPEN = EINSATZ"; }
+    if(joined){ rdRefs.buzzer.className+=" joined"; rdRefs.b1.textContent="DRIN ✓"; rdRefs.b2.textContent="BLEIB BEREIT"; }
+    else if(open){ rdRefs.b1.textContent=fmtEUR(stakeOf(rdPool)); rdRefs.b2.textContent="TIPPEN = EINSATZ"; }
+    else{ rdRefs.buzzer.className+=" locked"; rdRefs.b1.textContent="🎲"; rdRefs.b2.textContent="ZUR ZEIT NICHT VERFÜGBAR"; }
   }
 }
 
@@ -1326,6 +1350,12 @@ function renderFeed(){
   for(const m of FEED.slice(-60))f.appendChild(msgNode(m,"feed"));
   f.scrollTop=f.scrollHeight;
 }
+function renderFeedClassic(){
+  const f=$("#feed-classic"); if(!f)return;
+  f.innerHTML="";
+  for(const m of FEED.filter(m=>m.i!=null&&m.i<N).slice(-60))f.appendChild(msgNode(m,"feed"));
+  f.scrollTop=f.scrollHeight;
+}
 
 /* ---------- Detail ---------- */
 const dRefs={};
@@ -1395,7 +1425,11 @@ function tryBet(i){
   if(performance.now()<betGuard)return; // Schutz gegen versehentliche Doppel-Taps direkt nach dem Öffnen
   const t=now(),T=times(i,t),s=stakeOf(i);
   if(!T||S.bets[T.key])return;
-  if(T.phase!=="open"){ toast("Einsätze sind zu — nächste Runde in "+mmss(T.end-t)); return; }
+  if(T.phase!=="open"){
+    if(isRnd(i))toast("🎲 Zur Zeit nicht verfügbar — gleich öffnet die nächste Runde");
+    else toast("Einsätze sind zu — nächste Runde in "+mmss(T.end-t));
+    return;
+  }
   if(S.balance<s){ toast("Nicht genug Guthaben — lad kurz auf"); openTopup(); return; }
   S.balance-=s; S.stats.net-=s;
   S.bets[T.key]={stake:s,t,done:false};
@@ -1403,7 +1437,7 @@ function tryBet(i){
   pushBoth(i,{type:"join",name:S.profile.name,amt:s,extra:0});
   beep(660,.09,"sine",.1); beep(990,.12,"sine",.09,.06);
   if(navigator.vibrate)navigator.vibrate(12);
-  if(i===RND)toast("Du bist drin — bleib bereit, GO kann jeden Moment kommen ⚡");
+  if(isRnd(i))toast("Du bist drin — bleib bereit, GO kann jeden Moment kommen ⚡");
   else toast("Du bist drin! GO in "+mmss(T.tGo-t));
 }
 function seedChat(i){
@@ -1450,7 +1484,7 @@ function updateOverlay(t){
   if(pot)pot.textContent=fmtEUR(potOf(engaged.i,T,t));
   if(pl)pl.textContent=(joinedAt(engaged.i,T,t)+1)+" Spieler im Pot";
   if(!big)return;
-  if(engaged.i===RND){
+  if(isRnd(engaged.i)){
     big.className="ov-big dots"; big.textContent="• • •";
     if(sub)sub.textContent="Kann JEDEN Moment kommen — bleib bereit!";
     return;
@@ -1680,7 +1714,7 @@ function seedFeed(){
   for(const key of Object.keys(S.bets)){
     const b=S.bets[key];
     const [i,c]=key.split(":").map(Number);
-    const valid=(i>=0&&i<N)||i===RND||i===JP||i===PRIV;
+    const valid=(i>=0&&i<N)||isRnd(i)||i===JP||i===PRIV;
     if(!valid||!Number.isFinite(c)){ delete S.bets[key]; continue; }
     const T=times(i,t);
     if(!T){ if(b.done)delete S.bets[key]; continue; }
