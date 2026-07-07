@@ -1,0 +1,7 @@
+{
+  "_anleitung": "Kopiere diese Datei zu mail-config.json und trage deinen Key ein. Danach Server neu starten. Ohne mail-config.json läuft der E-Mail-Code im Demo-Modus (wird angezeigt statt verschickt).",
+  "provider": "brevo",
+  "apiKey": "HIER-DEIN-API-KEY",
+  "from": "deine@absender-adresse.de",
+  "fromName": "BUZZER"
+}

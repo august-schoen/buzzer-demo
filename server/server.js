@@ -106,6 +106,31 @@ function resolveRound(i,c){
   return out;
 }
 
+/* ---------- E-Mail-Versand (Brevo oder Resend; ohne Config → Demo-Fallback) ---------- */
+let MAIL=null;
+try{ MAIL=JSON.parse(fs.readFileSync(path.join(__dirname,"mail-config.json"),"utf8")); console.log("Mail-Versand aktiv über "+MAIL.provider); }catch(e){ console.log("Keine mail-config.json — E-Mail-Codes laufen im Demo-Fallback (Code wird angezeigt)"); }
+async function sendMail(to,subject,text){
+  if(!MAIL||!MAIL.apiKey)return false;
+  try{
+    if(MAIL.provider==="brevo"){
+      const r=await fetch("https://api.brevo.com/v3/smtp/email",{method:"POST",
+        headers:{"api-key":MAIL.apiKey,"content-type":"application/json"},
+        body:JSON.stringify({sender:{name:MAIL.fromName||"BUZZER",email:MAIL.from},to:[{email:to}],subject,textContent:text})});
+      if(!r.ok)console.error("brevo:",r.status,await r.text().catch(()=>""));
+      return r.ok;
+    }
+    if(MAIL.provider==="resend"){
+      const r=await fetch("https://api.resend.com/emails",{method:"POST",
+        headers:{"Authorization":"Bearer "+MAIL.apiKey,"content-type":"application/json"},
+        body:JSON.stringify({from:(MAIL.fromName||"BUZZER")+" <"+MAIL.from+">",to:[to],subject,text})});
+      if(!r.ok)console.error("resend:",r.status,await r.text().catch(()=>""));
+      return r.ok;
+    }
+  }catch(e){ console.error("sendMail:",e.message); }
+  return false;
+}
+const EMAIL_RE=/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/;
+
 /* ---------- Persistenz ---------- */
 let DB={users:{}};
 try{ DB=JSON.parse(fs.readFileSync(DATA_FILE,"utf8")); if(!DB.users)DB.users={}; }catch(e){}
@@ -251,6 +276,31 @@ function handleMsg(c,m){
   const u=userOf(c.token); if(!u)return;
 
   if(m.t==="ping"){ send(c,{t:"pong",serverNow:now(),e:m.e}); return; }
+
+  if(m.t==="emailcode"){
+    const email=String(m.email||"").trim().toLowerCase();
+    if(!EMAIL_RE.test(email)||email.length>80){ send(c,{t:"emailsent",real:false,error:"invalid"}); return; }
+    c.mailTries=(c.mailTries||0)+1;
+    if(c.mailTries>5){ send(c,{t:"emailsent",real:false,error:"limit"}); return; }
+    const code=String(crypto.randomInt(100000,1000000));
+    c.mailCode={email,code,exp:t+10*60000};
+    sendMail(email,"Dein BUZZER-Code: "+code,"Dein Bestätigungscode: "+code+"\n\nGültig für 10 Minuten.").then(ok=>{
+      if(ok)send(c,{t:"emailsent",real:true});
+      else send(c,{t:"emailsent",real:false,code}); // Demo-Fallback: Code anzeigen
+    });
+    return;
+  }
+  if(m.t==="emailverify"){
+    const email=String(m.email||"").trim().toLowerCase();
+    const code=String(m.code||"").trim();
+    const mc=c.mailCode;
+    if(mc&&mc.email===email&&mc.code===code&&t<mc.exp){
+      c.mailCode=null;
+      u.email=email; save(); // verifizierte E-Mail am Konto speichern
+      send(c,{t:"emailok"});
+    }else send(c,{t:"emailbad"});
+    return;
+  }
 
   if(m.t==="bet"){
     const i=m.i|0;

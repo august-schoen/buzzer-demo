@@ -1,6 +1,9 @@
 # Laufzeit-Daten: enthält Konten & Guthaben — gehört NICHT ins öffentliche Repo
 server/data.json
 
+# Mail-Zugangsdaten (API-Key) — niemals committen
+server/mail-config.json
+
 # Abhängigkeiten
 server/node_modules/
 

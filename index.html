@@ -569,6 +569,9 @@ function netHandle(m){
     case "privfail":
       toast(m.reason==="notfound"?"Lobby nicht gefunden":m.reason==="started"?"Runde läuft schon":m.reason==="balance"?"Nicht genug Guthaben":m.reason==="full"?"Lobby ist voll":"Geht gerade nicht");
       break;
+    case "emailsent": if(window.onbMailSent)onbMailSent(m); break;
+    case "emailok": if(window.onbMailOk)onbMailOk(true); break;
+    case "emailbad": if(window.onbMailOk)onbMailOk(false); break;
   }
 }
 
@@ -1950,8 +1953,8 @@ function initOnboarding(){
   const onb=$("#onb");
   if(S.profile){ onb.classList.remove("on"); return; }
   onb.classList.add("on");
-  const code=String(100000+Math.floor(Math.random()*900000));
-  $("#onb-code-hint").textContent="Demo — dein Code lautet: "+code;
+  let code=String(100000+Math.floor(Math.random()*900000)); // Offline-Fallback
+  let mailReal=false;
   const step=n=>{
     [1,2,3].forEach(k=>{ $("#onb-step"+k).classList.toggle("on",k===n); $("#dot"+k).classList.toggle("on",k<=n); });
   };
@@ -1961,10 +1964,30 @@ function initOnboarding(){
   $("#onb-email").addEventListener("input",chk1);
   $("#onb-terms").addEventListener("change",chk1);
   chk1();
-  $("#onb-next1").addEventListener("click",()=>{ $("#onb-mail-echo").textContent=$("#onb-email").value.trim(); step(2); });
+  window.onbMailSent=m=>{
+    if(m.real){ mailReal=true; $("#onb-code-hint").textContent="Schau in dein Postfach (auch im Spam)."; }
+    else if(m.code){ mailReal=false; code=m.code; $("#onb-code-hint").textContent="Demo — dein Code lautet: "+m.code; }
+    else $("#onb-code-hint").textContent="Senden gerade nicht möglich — Demo-Code: "+code;
+  };
+  window.onbMailOk=ok=>{
+    const b=$("#onb-verify"); b.disabled=false; b.textContent="Bestätigen";
+    if(ok)step(3); else $("#onb-err").textContent="Der Code stimmt nicht — schau nochmal nach.";
+  };
+  $("#onb-next1").addEventListener("click",()=>{
+    const email=$("#onb-email").value.trim();
+    $("#onb-mail-echo").textContent=email;
+    if(NET.on){ $("#onb-code-hint").textContent="Code wird geschickt …"; netSend({t:"emailcode",email}); }
+    else $("#onb-code-hint").textContent="Demo — dein Code lautet: "+code;
+    step(2);
+  });
   $("#onb-code").addEventListener("input",()=>{ $("#onb-verify").disabled=$("#onb-code").value.trim().length!==6; $("#onb-err").textContent=""; });
   $("#onb-verify").addEventListener("click",()=>{
-    if($("#onb-code").value.trim()===code){ step(3); }
+    const v=$("#onb-code").value.trim();
+    if(NET.on){
+      const b=$("#onb-verify"); b.disabled=true; b.textContent="Prüfe …";
+      netSend({t:"emailverify",email:$("#onb-email").value.trim(),code:v});
+    }
+    else if(v===code){ step(3); }
     else{ $("#onb-err").textContent="Der Code stimmt nicht — schau nochmal nach."; }
   });
   let idOk=false;

@@ -41,9 +41,19 @@ Render / Railway / Fly.io / beliebiger Node-Host:
 
 GitHub Pages (https://august-schoen.github.io/buzzer-demo/) kann keinen Server ausführen und zeigt daher die Offline-Simulation.
 
+## Echter E-Mail-Code (optional, 2 Minuten)
+
+Ohne Konfiguration zeigt die App den Bestätigungscode an (Demo-Fallback). Für echten Versand:
+
+1. Kostenlosen Account bei **Brevo** (brevo.com, 300 Mails/Tag frei) oder **Resend** (resend.com) anlegen und einen API-Key erzeugen.
+2. `server/mail-config.example.json` zu `server/mail-config.json` kopieren, Key + Absender-Adresse eintragen.
+3. Server neu starten. Fertig — Codes kommen jetzt per Mail, geprüft wird serverseitig.
+
+`mail-config.json` ist gitignored — der Key landet nie im Repo.
+
 ## Wo liegen welche Daten?
 
 - **Code:** dieses Repo (Quelle der Wahrheit).
-- **Konten & Guthaben (online):** `server/data.json` auf dem Rechner/Host, auf dem der Server läuft. Bewusst nicht im Repo.
-- **Auf dem Gerät (localStorage):** Spielstand der Offline-Simulation, das Login-Token, die beim Onboarding eingegebene E-Mail. Die E-Mail verlässt das Gerät nicht — es gibt noch keinen echten Mail-Versand.
-- **Attrappen (bewusst):** E-Mail-Code wird angezeigt statt verschickt, Ausweis-/Alters-Check ist simuliert, Bezahl-Buttons sind reine Optik.
+- **Konten, Guthaben & verifizierte E-Mails (online):** `server/data.json` auf dem Rechner/Host, auf dem der Server läuft. Bewusst nicht im Repo.
+- **Auf dem Gerät (localStorage):** Spielstand der Offline-Simulation und das Login-Token.
+- **Attrappen (bewusst):** Ausweis-/Alters-Check ist simuliert, Bezahl-Buttons sind reine Optik. E-Mail-Code ist echt, sobald `mail-config.json` existiert — sonst Demo-Fallback.

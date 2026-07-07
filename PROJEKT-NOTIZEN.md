@@ -60,7 +60,9 @@ Fehlstart-Disqualifikation verhindern Vorab-Tippen.
 
 ## Bekannte Grenzen / bewusste Attrappen
 
-- E-Mail-Code wird angezeigt statt verschickt; **Alters-/Ausweis-Check ist Attrappe und
+- E-Mail-Code: serverseitig erzeugt & geprüft; **echter Versand sobald `server/mail-config.json`
+  mit Brevo-/Resend-Key existiert** (siehe README), sonst Demo-Fallback (Code wird angezeigt).
+  Verifizierte E-Mail wird am Server-Konto gespeichert. **Alters-/Ausweis-Check ist Attrappe und
   bleibt vorerst so** (Augusts Entscheidung 07.07.2026 — echt erst mit KYC-Anbieter in Phase 3).
 - Öffentliche Buzzer: GO-Jitter ist seeded und clientseitig berechenbar → für Techniker
   vorhersagbar. Fix (Phase 1.1): geheimer Server-Jitter wie bei Privat.
