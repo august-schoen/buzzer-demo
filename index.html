@@ -236,6 +236,12 @@ input{font:inherit;color:inherit}
 .lb-row .val.gold{color:var(--gold)}
 .lb-row .sub{font-size:11px;color:var(--muted2);font-variant-numeric:tabular-nums;white-space:nowrap}
 .lb-row.me{background:#0D0B12;border-left:2px solid var(--violet-dim);padding-left:8px;border-radius:0}
+.hist-row{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--line2)}
+.hist-row .hd{flex:none;width:44px;font-size:10px;color:var(--muted2);font-weight:700;line-height:1.5;font-variant-numeric:tabular-nums}
+.hist-row .hl{flex:1;font-weight:800;font-size:13.5px}
+.hist-row .hl .hs{display:block;font-size:11px;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+.hist-row .ha{font-weight:900;font-size:14.5px;color:var(--red);font-variant-numeric:tabular-nums;white-space:nowrap}
+.hist-row .ha.win{color:var(--gold)}
 
 /* ---------- sheet ---------- */
 .dim{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:60;opacity:0;pointer-events:none;transition:.2s}
@@ -404,6 +410,8 @@ input{font:inherit;color:inherit}
 
     <section id="view-boards" class="view"></section>
 
+    <section id="view-hist" class="view"></section>
+
     <section id="view-profile" class="view"></section>
 
     <section id="view-detail" class="view"></section>
@@ -494,6 +502,8 @@ try{ S=JSON.parse(localStorage.getItem(LS)||"null"); }catch(e){}
 if(!S) S={profile:null,balance:0,stats:{plays:0,wins:0,net:0,best:null},settings:{tempo:"demo",sound:true},bets:{}};
 if(!S.bets)S.bets={}; if(!S.stats)S.stats={plays:0,wins:0,net:0,best:null}; if(!S.settings)S.settings={tempo:"demo",sound:true};
 if(!S.day)S.day={k:"",best:null,won:0,bets:0};
+if(S.stats.won==null)S.stats.won=0;   // Brutto-Gewinne (fürs Profil — nur Positives zeigen)
+if(!S.hist)S.hist=[];                  // Runden-Historie fürs Profil
 function save(){ try{localStorage.setItem(LS,JSON.stringify(S));}catch(e){} }
 
 let timeOffset=0;
@@ -711,7 +721,9 @@ function settleUser(i,c,userMs){ // userMs: number | null (verpasst) | "dq"
   S.stats.plays++;
   // Bei Server-Verbindung ist der Server die Kasse — Guthaben kommt per 'result'/'balance'.
   if(prize>0&&!NET.on){ S.balance+=prize; }
-  if(prize>0){ S.stats.net+=prize; if(rank===1)S.stats.wins++; }
+  if(prize>0){ S.stats.net+=prize; S.stats.won+=prize; if(rank===1)S.stats.wins++; }
+  S.hist.unshift({t:now(),i,stake,ms:(typeof userMs==="number")?userMs:null,prize,dq:userMs==="dq"});
+  if(S.hist.length>60)S.hist.length=60;
   ensureDay();
   S.day.bets++;
   if(typeof userMs==="number"&&(S.day.best==null||userMs<S.day.best))S.day.best=userMs;
@@ -1024,7 +1036,7 @@ ovEl.addEventListener("pointerdown",e=>{
 
 /* ---------- Views / Navigation ---------- */
 let currentView="menu",currentDetail=null;
-const views={menu:$("#view-menu"),home:$("#view-home"),random:$("#view-random"),jack:$("#view-jack"),priv:$("#view-priv"),boards:$("#view-boards"),profile:$("#view-profile"),detail:$("#view-detail")};
+const views={menu:$("#view-menu"),home:$("#view-home"),random:$("#view-random"),jack:$("#view-jack"),priv:$("#view-priv"),boards:$("#view-boards"),hist:$("#view-hist"),profile:$("#view-profile"),detail:$("#view-detail")};
 function navigate(v,arg){
   currentView=v;
   for(const k of Object.keys(views))views[k].classList.toggle("on",k===v);
@@ -1038,6 +1050,7 @@ function navigate(v,arg){
   if(v==="jack")renderJack();
   if(v==="priv")renderPriv();
   if(v==="boards")renderBoards();
+  if(v==="hist")renderHist();
   if(v==="profile")renderProfile();
   updateViews(now());
   views[v].scrollTop=0; $("#main").scrollTop=0;
@@ -1484,8 +1497,15 @@ function pvGo(){
 function pvResult(m){
   PV.active=false; PV.done=true;
   ovEl.classList.remove("go-bg");
-  if(m.balance!=null){ S.balance=m.balance; save(); syncMoney(); }
+  if(m.balance!=null){ S.balance=m.balance; syncMoney(); }
   const won=m.you&&m.you.won>0;
+  // Profil-Statistik & Historie
+  S.stats.plays++;
+  if(won){ S.stats.wins++; S.stats.won+=m.you.won; S.stats.net+=m.you.won; }
+  if(m.you&&m.you.ms!=null&&(S.stats.best==null||m.you.ms<S.stats.best))S.stats.best=m.you.ms;
+  S.hist.unshift({t:now(),i:PRIV,stake:NET.lobby?NET.lobby.stake:0,ms:m.you?m.you.ms:null,prize:won?m.you.won:0});
+  if(S.hist.length>60)S.hist.length=60;
+  save();
   const rows=(m.ranking||[]).map((r,ix)=>'<div class="pr'+(r.name===(S.profile&&S.profile.name)?" me":"")+'"><span class="rk">'+(ix+1)+'.</span><span class="nm">'+esc(r.name)+'</span><span class="tm">'+(r.ms!=null?fmtMs(r.ms):"—")+'</span></div>').join("");
   const inner=(won
       ?'<div class="r-title gold">DU HAST DEN POT! 🏆</div><div class="r-prize">+'+fmtEUR(m.you.won)+'</div>'
@@ -1848,6 +1868,25 @@ function renderBoards(){
     '<div class="p-foot">Zählt für heute · setzt sich um Mitternacht zurück</div>';
   $("#lb-back").addEventListener("click",()=>navigate("menu"));
 }
+/* ---------- Vergangene Runden ---------- */
+function fmtDay(t){ const d=new Date(t); return String(d.getDate()).padStart(2,"0")+"."+String(d.getMonth()+1).padStart(2,"0")+"."; }
+function renderHist(){
+  let rows="";
+  for(const h of S.hist){
+    const won=h.prize>0;
+    const label=h.i===PRIV?"Privat":labelOf(h.i);
+    const sub=h.dq?"Fehlstart":(h.ms!=null?fmtMs(h.ms):"verpasst");
+    rows+='<div class="hist-row"><span class="hd">'+fmtDay(h.t)+"<br>"+clock(h.t)+'</span>'+
+      '<span class="hl">'+label+'<span class="hs">'+sub+"</span></span>"+
+      '<span class="ha'+(won?" win":"")+'">'+(won?"+"+fmtEUR(h.prize):"−"+fmtEUR(h.stake))+"</span></div>";
+  }
+  views.hist.innerHTML=
+    '<div class="backrow"><button class="backbtn" id="h-back"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg></button><div class="vtitle">Vergangene Runden</div></div>'+
+    (rows||'<div class="explain" style="margin-top:14px">Noch keine Runden gespielt.</div>')+
+    (rows?'<div class="p-foot">Letzte '+S.hist.length+" Runden · nur auf diesem Gerät</div>":"");
+  $("#h-back").addEventListener("click",()=>navigate("profile"));
+}
+
 function renderProfile(){
   const st=S.stats;
   const wr=st.plays?Math.round(st.wins/st.plays*100):0;
@@ -1858,9 +1897,10 @@ function renderProfile(){
       '<div class="dstat"><div class="v">'+st.plays+'</div><div class="k">Runden</div></div>'+
       '<div class="dstat"><div class="v">'+st.wins+" · "+wr+'%</div><div class="k">Siege · Quote</div></div>'+
       '<div class="dstat"><div class="v">'+(st.best?fmtMs(st.best):"–")+'</div><div class="k">Beste Reaktion</div></div>'+
-      '<div class="dstat"><div class="v" style="color:'+(st.net>=0?"var(--gold)":"var(--red)")+'">'+(st.net>=0?"+":"")+fmtEUR(st.net)+'</div><div class="k">Bilanz</div></div>'+
+      '<div class="dstat"><div class="v gold">'+fmtEUR(st.won||0)+'</div><div class="k">Gewonnen</div></div>'+
     "</div>"+
     '<div class="p-rows">'+
+      '<div class="p-row" id="p-hist" style="cursor:pointer"><span style="font-weight:700">Vergangene Runden</span><span style="color:var(--muted2);font-weight:800">›</span></div>'+
       '<div class="p-row"><span>Benachrichtigungen<span class="sub">Erinnert dich, wenn deine Buzzer starten (App im Hintergrund offen)</span></span><button class="switch'+(S.settings.notif?" on":"")+'" id="p-notif"></button></div>'+
       '<div class="p-row"><span>Schnelleres Tempo<span class="sub">Runde alle 20 min statt 30 min</span></span><button class="switch'+(S.settings.tempo==="demo"?" on":"")+'" id="p-tempo"></button></div>'+
       '<div class="p-row"><span>Sound</span><button class="switch'+(S.settings.sound?" on":"")+'" id="p-sound"></button></div>'+
@@ -1868,6 +1908,7 @@ function renderProfile(){
     "</div>"+
     '<div class="p-foot">BUZZER MVP · Demo · Kein echtes Geld · 18+</div>';
   $("#p-back").addEventListener("click",()=>navigate("menu"));
+  $("#p-hist").addEventListener("click",()=>navigate("hist"));
   $("#p-notif").addEventListener("click",()=>{
     if(S.settings.notif){ S.settings.notif=false; save(); renderProfile(); return; }
     if(!("Notification" in window)){ toast("Auf diesem Gerät/Browser nicht verfügbar"); return; }

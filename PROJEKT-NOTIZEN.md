@@ -40,6 +40,13 @@ Fehlstart-Disqualifikation verhindern Vorab-Tippen.
 
 ## Geld-Entscheidungen
 
+- **Profil zeigt nie Verluste auf den ersten Blick** (Augusts Entscheidung 08.07.): Statt „Bilanz"
+  (konnte rot/negativ sein) steht dort „Gewonnen" (Brutto-Gewinne, gold). Verluste sieht man nur
+  bewusst unter Profil → „Vergangene Runden" (Liste: Datum, Buzzer, Reaktionszeit, +Gewinn/−Einsatz).
+- **Zeitgleichheit teilt den Pot** (Server, 08.07.): Exakt gleiche Reaktionszeiten teilen sich den
+  Preis ihres Rangs (WTA und Top-3) — verhindert Doppel-Auszahlung. Gerechnet wird intern mit
+  voller Float-Präzision (Sub-Millisekunde), angezeigt werden 2 Nachkommastellen.
+
 - Demo/Phase 1: **0 % Gebühr überall**, kein echtes Geld, „Aufladen" ist Attrappe
   (Apple Pay/PayPal/venmo/Mastercard nur Optik).
 - Gebühr wird im Produkt **niemals kommuniziert** (keine Gebühren-Texte in der UI).

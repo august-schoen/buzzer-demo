@@ -192,14 +192,17 @@ function resolvePublic(i,T){
   const winnerName=humanWins?bestReal.name:R.winner;
   const winnerMs=humanWins?bestReal.ms:R.winnerMs;
   const shares={1:mode==="wta"?1:0.6,2:mode==="top3"?0.25:0,3:mode==="top3"?0.15:0};
+  // Exakt gleiche Zeiten teilen sich den Preis ihres Rangs (kein Doppel-Payout)
+  const rankCount={};
+  for(const r of reals){ if(r.ms!=null){ const rk=rankOf(r.ms); r.rank=rk; rankCount[rk]=(rankCount[rk]||0)+1; } }
   const results=[];
   for(const r of reals){
     const u=userOf(r.token); if(!u)continue;
     ensureDay(u);
     let rank=null,prize=0;
     if(r.ms!=null){
-      rank=rankOf(r.ms);
-      if(rank<=3&&shares[rank])prize=potNet*shares[rank];
+      rank=r.rank;
+      if(rank<=3&&shares[rank])prize=potNet*shares[rank]/rankCount[rank];
       if(u.day.best==null||r.ms<u.day.best)u.day.best=r.ms;
       if(u.stats.best==null||r.ms<u.stats.best)u.stats.best=r.ms;
     }
@@ -253,13 +256,16 @@ function resolveLobby(L){
   const pot=L.members.length*L.stake; // 0% Gebühr — kompletter Pot
   const ranked=L.members.map(m=>({name:m.name,token:m.token,ms:(typeof L.taps[m.token]==="number")?Math.max(MINMS,L.taps[m.token]):null}))
     .sort((a,b)=>(a.ms==null?1e9:a.ms)-(b.ms==null?1e9:b.ms));
-  const winner=ranked[0]&&ranked[0].ms!=null?ranked[0]:null;
-  if(winner){ const u=userOf(winner.token); if(u){ u.balance+=pot; u.stats.wins++; ensureDay(u); u.day.won+=pot; } }
+  // Zeitgleiche Erste teilen sich den Pot (kein Doppel-Payout)
+  const winners=ranked[0]&&ranked[0].ms!=null?ranked.filter(r=>r.ms===ranked[0].ms):[];
+  const share=winners.length?pot/winners.length:0;
+  for(const w of winners){ const u=userOf(w.token); if(u){ u.balance+=share; u.stats.wins++; ensureDay(u); u.day.won+=share; } }
   for(const m of L.members){ const u=userOf(m.token); if(u){ u.stats.plays++; ensureDay(u); u.day.bets++; if(typeof L.taps[m.token]==="number"){ const ms=Math.max(MINMS,L.taps[m.token]); if(u.day.best==null||ms<u.day.best)u.day.best=ms; if(u.stats.best==null||ms<u.stats.best)u.stats.best=ms; } } }
   save();
+  const winnerInfo=winners.length?{name:winners.map(w=>w.name).join(" & "),ms:winners[0].ms}:null;
   for(const c of conns){
     const me=ranked.find(r=>r.token===c.token);
-    if(me){ const u=userOf(c.token); send(c,{t:"privresult",code:L.code,pot,winner:winner?{name:winner.name,ms:winner.ms}:null,ranking:ranked.map(r=>({name:r.name,ms:r.ms})),you:{ms:me.ms,won:winner&&winner.token===c.token?pot:0},balance:u?u.balance:0}); }
+    if(me){ const u=userOf(c.token); const myWin=winners.some(w=>w.token===c.token)?share:0; send(c,{t:"privresult",code:L.code,pot,winner:winnerInfo,ranking:ranked.map(r=>({name:r.name,ms:r.ms})),you:{ms:me.ms,won:myWin},balance:u?u.balance:0}); }
   }
   setTimeout(()=>{ delete lobbies[L.code]; },60000);
 }
