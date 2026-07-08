@@ -31,9 +31,13 @@ Fehlstart-Disqualifikation verhindern Vorab-Tippen.
   **Niemals Countdown/Zeit anzeigen** (sonst Timing ableitbar) — Pause zeigt nur
   „Zur Zeit nicht verfügbar". Einsatz → sofort Bereitschafts-Overlay, jeder Tap vor GO = Fehlstart.
 - **Jackpot:** täglich 20:15 lokal, 10 € Einsatz, Pot wächst den ganzen Tag, Gold-Optik.
-- **Privat:** Einsatz wählen (1–100 €), Einladungslink/Code, Ersteller drückt START → GO ~30 s
-  später (geheimer Server-Jitter). **Für immer 0 % Gebühr** (wird für Rechnungen etc. genutzt).
-  Online komplett echt über den Server; offline simulierte Freunde.
+- **Privat:** Einsatz wählen ODER Code in der App eingeben zum Beitreten. Einsatz wird erst
+  beim START eingezogen → **Lobby bleibt nach der Runde bestehen, beliebig viele Runden** ohne
+  neuen Code. Ersteller drückt START → Timer 30 s bis 0 → dann 2–5 s Zufall bis GO (geheimer
+  Server-Jitter). **Für immer 0 % Gebühr.** Nur online (grüner Punkt); offline: Hinweis „Verbindung nötig".
+- **Timer-Regel (alle Buzzer außer Random):** sichtbarer Countdown läuft bis 0, DANN 2–5 s
+  Zufall bis grün. Angezeigt wird immer bis `tGoBase` (fest), grün = `tGoBase + 2–5 s` (verdeckt),
+  damit das GO-Timing nicht ablesbar ist. Random: gar kein Countdown.
 - **Bestenlisten** (Pokal-Icon im Header): Schnellste heute + Top-Gewinner heute, eigene
   Platzierung markiert, täglicher Reset.
 - Benachrichtigungen (Profil-Toggle): lokal, nur solange App im Hintergrund offen ist.

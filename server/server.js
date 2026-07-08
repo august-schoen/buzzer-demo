@@ -70,7 +70,7 @@ function times(i,t){
     const c=Math.round(base/86400000);
     const start=base-86400000+120000,end=base+60000;
     const tClose=base-15000,tCount=base-12000,tGoBase=base-9000;
-    const tGo=tGoBase+800+rng(seedOf(JP,c,11))()*1800;
+    const tGo=tGoBase+2000+rng(seedOf(JP,c,11))()*3000;
     return {i,c,start,end,tClose,tCount,tGoBase,tGo,phase:phaseOf(t,tClose,tCount,tGoBase,tGo),key:JP+":"+c};
   }
   const P=PERIOD,off=offsetOf(i);
@@ -235,7 +235,7 @@ setInterval(()=>{
     const L=lobbies[code];
     if(L.goAt&&!L.goSent&&t>=L.goAt){ L.goSent=true; lobbyCast(L,{t:"privgo",code}); }
     if(L.goAt&&!L.resolved&&t>=L.goAt+3800)resolveLobby(L);
-    if(!L.goAt&&t-L.createdAt>3600000){ refundLobby(L,"Lobby abgelaufen — Einsatz zurück"); } // 1 h ohne Start → auflösen
+    if(!L.startAt&&t-(L.lastActive||L.createdAt)>3600000){ disbandLobby(L,"Lobby wegen Inaktivität geschlossen"); } // 1 h idle → auflösen
   }
 },250);
 
@@ -244,13 +244,9 @@ const lobbies={}; // code -> {code,stake,creator,members:[{token,name}],createdA
 function makeCode(){ const A="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; let s=""; for(let k=0;k<5;k++)s+=A[crypto.randomInt(A.length)]; return lobbies[s]?makeCode():s; }
 function lobbyState(L){ return {t:"priv",code:L.code,stake:L.stake,creator:L.creatorName,members:L.members.map(m=>m.name),startAt:L.startAt||null,done:!!L.resolved}; }
 function lobbyCast(L,obj){ const tokens=new Set(L.members.map(m=>m.token)); broadcast(obj,c=>tokens.has(c.token)); }
-function refundLobby(L,msg){
-  for(const m of L.members){ const u=userOf(m.token); if(u){ u.balance+=L.stake; } }
-  save();
-  lobbyCast(L,{t:"privend",code:L.code,msg});
-  for(const c of conns){ if(L.members.some(m=>m.token===c.token)){ const u=userOf(c.token); if(u)send(c,{t:"balance",balance:u.balance}); } }
-  delete lobbies[L.code];
-}
+function connOf(token){ for(const c of conns)if(c.token===token)return c; return null; }
+function disbandLobby(L,msg){ lobbyCast(L,{t:"privend",code:L.code,msg}); delete lobbies[L.code]; }
+function lobbyOfToken(token){ for(const code of Object.keys(lobbies))if(lobbies[code].members.some(m=>m.token===token))return lobbies[code]; return null; }
 function resolveLobby(L){
   L.resolved=true;
   const pot=L.members.length*L.stake; // 0% Gebühr — kompletter Pot
@@ -267,7 +263,9 @@ function resolveLobby(L){
     const me=ranked.find(r=>r.token===c.token);
     if(me){ const u=userOf(c.token); const myWin=winners.some(w=>w.token===c.token)?share:0; send(c,{t:"privresult",code:L.code,pot,winner:winnerInfo,ranking:ranked.map(r=>({name:r.name,ms:r.ms})),you:{ms:me.ms,won:myWin},balance:u?u.balance:0}); }
   }
-  setTimeout(()=>{ delete lobbies[L.code]; },60000);
+  // Lobby bleibt bestehen — für die nächste Runde zurücksetzen
+  L.startAt=null; L.goAt=null; L.goSent=false; L.taps={}; L.resolved=false; L.lastActive=now();
+  lobbyCast(L,lobbyState(L));
 }
 
 /* ---------- WebSocket ---------- */
@@ -354,45 +352,47 @@ function handleMsg(c,m){
   }
   if(m.t==="privcreate"){
     const stake=Math.min(1000,Math.max(1,m.stake|0));
-    if(u.balance<stake){ send(c,{t:"betfail",reason:"balance"}); return; }
-    for(const code of Object.keys(lobbies)){ if(lobbies[code].creator===c.token&&!lobbies[code].resolved){ send(c,{t:"privfail",reason:"exists"}); return; } }
-    u.balance-=stake; save();
+    if(lobbyOfToken(c.token)){ send(c,{t:"privfail",reason:"exists"}); return; } // schon in einer Lobby
     const code=makeCode();
-    lobbies[code]={code,stake,creator:c.token,creatorName:u.name,members:[{token:c.token,name:u.name}],createdAt:t,startAt:null,goAt:null,goSent:false,taps:{},resolved:false};
-    send(c,{t:"balance",balance:u.balance});
+    // Einsatz wird erst beim START eingezogen → Lobby kann mehrere Runden laufen
+    lobbies[code]={code,stake,creator:c.token,creatorName:u.name,members:[{token:c.token,name:u.name}],createdAt:t,lastActive:t,startAt:null,goAt:null,goSent:false,taps:{},resolved:false,round:0};
     send(c,lobbyState(lobbies[code]));
     return;
   }
   if(m.t==="privjoin"){
     const L=lobbies[String(m.code||"").toUpperCase()];
-    if(!L||L.resolved){ send(c,{t:"privfail",reason:"notfound"}); return; }
-    if(L.startAt){ send(c,{t:"privfail",reason:"started"}); return; }
+    if(!L){ send(c,{t:"privfail",reason:"notfound"}); return; }
+    if(L.startAt){ send(c,{t:"privfail",reason:"started"}); return; } // läuft gerade — warte auf nächste Runde
     if(L.members.some(x=>x.token===c.token)){ send(c,lobbyState(L)); return; }
     if(L.members.length>=12){ send(c,{t:"privfail",reason:"full"}); return; }
-    if(u.balance<L.stake){ send(c,{t:"privfail",reason:"balance"}); return; }
-    u.balance-=L.stake; save();
-    L.members.push({token:c.token,name:u.name});
-    send(c,{t:"balance",balance:u.balance});
+    L.members.push({token:c.token,name:u.name}); L.lastActive=t;
+    send(c,lobbyState(L));            // dem Beitretenden direkt die Lobby zeigen
     lobbyCast(L,lobbyState(L));
-    lobbyCast(L,{t:"privchat",code:L.code,name:u.name,sys:false,join:true,amt:L.stake});
+    lobbyCast(L,{t:"privchat",code:L.code,name:u.name,join:true});
     return;
   }
   if(m.t==="privstart"){
-    for(const code of Object.keys(lobbies)){
-      const L=lobbies[code];
-      if(L.creator===c.token&&!L.startAt&&!L.resolved){
-        L.startAt=t+30000;
-        L.goAt=L.startAt+800+Math.random()*1800; // geheimer Jitter — kennt nur der Server
-        lobbyCast(L,lobbyState(L));
-      }
+    const L=lobbyOfToken(c.token);
+    if(!L||L.creator!==c.token||L.startAt)return;
+    // Einsatz JETZT von allen einziehen; wer nicht zahlen kann, fliegt für diese Lobby raus
+    const paid=[];
+    for(const mem of L.members){ const mu=userOf(mem.token);
+      if(mu&&mu.balance>=L.stake){ mu.balance-=L.stake; paid.push(mem); const cc=connOf(mem.token); if(cc)send(cc,{t:"balance",balance:mu.balance}); }
+      else { const cc=connOf(mem.token); if(cc)send(cc,{t:"privfail",reason:"balance"}); }
     }
+    L.members=paid; save();
+    if(L.members.length<1){ disbandLobby(L,"Niemand konnte den Einsatz zahlen"); return; }
+    L.round=(L.round||0)+1; L.taps={}; L.resolved=false; L.goSent=false; L.lastActive=t;
+    L.startAt=t+30000;                          // Timer zählt 30 s bis 0
+    L.goAt=L.startAt+2000+Math.random()*3000;   // dann 2–5 s geheimer Jitter bis grün
+    lobbyCast(L,lobbyState(L));
     return;
   }
-  if(m.t==="privcancel"){
-    for(const code of Object.keys(lobbies)){
-      const L=lobbies[code];
-      if(L.creator===c.token&&!L.startAt&&!L.resolved)refundLobby(L,"Der Ersteller hat abgebrochen — Einsatz zurück");
-    }
+  if(m.t==="privleave"||m.t==="privcancel"){
+    const L=lobbyOfToken(c.token);
+    if(!L||L.startAt)return; // laufende Runde kann man nicht verlassen
+    if(L.creator===c.token)disbandLobby(L,"Lobby wurde geschlossen");
+    else { L.members=L.members.filter(x=>x.token!==c.token); lobbyCast(L,lobbyState(L)); send(c,{t:"privend",code:L.code,msg:"Lobby verlassen"}); }
     return;
   }
   if(m.t==="privtap"){

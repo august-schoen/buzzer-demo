@@ -582,7 +582,7 @@ function netHandle(m){
       toast(m.msg||"Lobby beendet"); if(currentView==="priv")renderPriv();
       break;
     case "privchat":
-      if(m.join)pushChat(PRIV,{type:"join",name:m.name,amt:m.amt,extra:0});
+      if(m.join)pushChat(PRIV,{type:"sys",text:esc(m.name)+" ist dabei"});
       else if(m.name!==(S.profile&&S.profile.name))pushChat(PRIV,{type:"user",name:m.name,text:m.text});
       break;
     case "privfail":
@@ -640,7 +640,7 @@ function timesJp(t){
   const c=Math.round(base/86400000);
   const start=base-86400000+120000,end=base+60000;
   const tClose=base-15000,tCount=base-12000,tGoBase=base-9000;
-  const tGo=tGoBase+800+rng(seedOf(JP,c,11))()*1800;
+  const tGo=tGoBase+2000+rng(seedOf(JP,c,11))()*3000;
   return {i:JP,c,start,end,tClose,tCount,tGoBase,tGo,phase:phaseOf(t,tClose,tCount,tGoBase,tGo),key:JP+":"+c};
 }
 function timesPriv(t){
@@ -837,7 +837,7 @@ function tick(){
   if(Object.keys(joinCache).length>400){ for(const k of Object.keys(joinCache).slice(0,200))delete joinCache[k]; }
   checkTakeover(t);
   // Online-Privat: Bereitschafts-Overlay kurz vor GO für alle öffnen (GO selbst kommt vom Server)
-  if(NET.on&&NET.lobby&&NET.lobby.startAt&&!PV.active&&!PV.done){ const d=NET.lobby.startAt-t; if(d<=12000&&d>-2000)pvArmSuspense(); }
+  if(NET.on&&NET.lobby&&NET.lobby.startAt)pvTick(t);
   checkNotify(t);
   const hypeIdx=currentView==="detail"?currentDetail:currentView==="random"?rdPool:currentView==="jack"?JP:currentView==="priv"&&S.private?PRIV:null;
   if(hypeIdx!=null&&Math.random()<0.028)
@@ -1108,8 +1108,8 @@ function heroPick(t){
   let best=null,bestD=Infinity;
   for(let i=0;i<N;i++){
     const T=times(i,t);
-    let d=T.tGo-t;
-    if(d<-3200)d=T.tGo+period()-t; // Runde vorbei → nächste
+    let d=T.tGoBase-t;
+    if(d<-6000)d=T.tGoBase+period()-t; // Runde vorbei → nächste
     if(d<bestD){bestD=d;best={i,d};}
   }
   return best;
@@ -1121,7 +1121,7 @@ function joinPick(t,exclude){
     if(i===exclude)continue;
     const T=times(i,t);
     if(T.phase!=="open")continue;
-    const d=T.tGo-t;
+    const d=T.tGoBase-t;
     if(d<bestD){bestD=d;best={i,d};}
   }
   return best;
@@ -1137,10 +1137,11 @@ function buildHero(el,i,R){
 }
 function updHeroCard(el,R,i,t){
   const T=times(i,t);
-  const d=T.tGo-t;
-  el.classList.toggle("hot",d<15000&&d>-3200);
+  const d=T.tGoBase-t;
+  el.classList.toggle("hot",d<15000&&d>-6000);
   if(T.phase==="live"){R.count.textContent="LIVE";R.count.classList.add("soon");}
   else if(T.phase==="result"){R.count.textContent="🏆";R.count.classList.remove("soon");}
+  else if(d<=0){R.count.textContent="GLEICH";R.count.classList.add("soon");}
   else{R.count.textContent=mmss(d);R.count.classList.toggle("soon",d<15000);}
   R.pot.textContent=fmtEUR(potOf(i,T,t));
   R.pl.textContent=joinedAt(i,T,t)+(S.bets[T.key]?1:0);
@@ -1167,21 +1168,21 @@ function updateHome(t){
   if(j&&hero2El){
     if(hero2I!==j.i){ hero2I=j.i; buildHero2Card(hero2El,j.i,hero2R); }
     const T2=times(hero2I,t);
-    const d2=T2.tGo-t;
+    const d2=T2.tGoBase-t;
     hero2El.classList.toggle("hot",d2<15000);
     hero2R.pv.textContent=fmtEUR(potOf(hero2I,T2,t));
-    hero2R.pl.textContent=(joinedAt(hero2I,T2,t)+(S.bets[T2.key]?1:0))+" 👤";
-    hero2R.st.textContent="GO in "+mmss(d2);
+    hero2R.pl.textContent=(joinedAt(hero2I,T2,t)+(S.bets[T2.key]?1:0))+" Spieler";
+    hero2R.st.textContent=d2<=0?"gleich":"GO in "+mmss(d2);
     hero2R.st.className="st"+(d2<15000?" ok":"");
-    hero2R.bar.style.width=(clamp(1-d2/(T2.tGo-T2.start),0,1)*100).toFixed(1)+"%";
+    hero2R.bar.style.width=(clamp(1-d2/(T2.tGoBase-T2.start),0,1)*100).toFixed(1)+"%";
   }
   // cards
   for(let i=0;i<N;i++){
     const r=cardRefs[i]; if(!r)continue;
     const Ti=times(i,t);
     r.pv.textContent=fmtEUR(potOf(i,Ti,t));
-    r.pl.textContent=(joinedAt(i,Ti,t)+(S.bets[Ti.key]?1:0))+" 👤";
-    const dGo=Ti.tGo-t;
+    r.pl.textContent=(joinedAt(i,Ti,t)+(S.bets[Ti.key]?1:0))+" Spieler";
+    const dGo=Ti.tGoBase-t;
     const hotB=Ti.phase!=="open"&&Ti.phase!=="result";
     r.card.classList.toggle("hot-b",hotB);
     if(Ti.phase==="result"){
@@ -1196,7 +1197,7 @@ function updateHome(t){
       r.st.textContent="🔴 GLEICH"; r.st.className="st hot"; r.bar.style.width="100%";
     }else{
       r.st.textContent="GO in "+mmss(dGo); r.st.className="st";
-      r.bar.style.width=(clamp(1-dGo/(Ti.tGo-Ti.start),0,1)*100).toFixed(1)+"%";
+      r.bar.style.width=(clamp(1-dGo/(Ti.tGoBase-Ti.start),0,1)*100).toFixed(1)+"%";
     }
     if(S.bets[Ti.key]&&!S.bets[Ti.key].done){ r.card.style.borderColor="rgba(79,169,124,.7)"; }
     else r.card.style.borderColor="";
@@ -1233,9 +1234,10 @@ function updateMyBets(t){
     const p=row.querySelector('[data-p="'+a.T.key+'"]'),c=row.querySelector('[data-c="'+a.T.key+'"]');
     if(p)p.textContent=fmtEUR(potOf(a.i,a.T,t));
     if(c){
-      const d=a.T.tGo-t;
+      const d=a.T.tGoBase-t;
       if(isRnd(a.i)){ c.textContent="läuft …"; c.classList.add("hot"); }
       else if(a.i===PRIV&&a.T.waiting){ c.textContent="wartet auf dein GO"; c.classList.remove("hot"); }
+      else if(d<=0){ c.textContent="gleich!"; c.classList.add("hot"); }
       else{ c.textContent="GO in "+(d>3600000?fmtLong(d):mmss(d)); c.classList.toggle("hot",d<15000); }
     }
   }
@@ -1256,22 +1258,23 @@ function updateMenu(t){
         '<button class="j-cta" id="jb-cta">Dabei sein</button></div>';
       $("#jb-cta").addEventListener("click",e=>{ e.stopPropagation(); const Tx=timesJp(now()); if(!S.bets[Tx.key])tryBet(JP); else navigate("jack"); });
     }
-    const d=TJ.tGo-t;
+    const d=TJ.tGoBase-t;
     const goDay=new Date(TJ.tGoBase);
     const today=new Date(t).getDate()===goDay.getDate();
     $("#jb-when").textContent=(today?"Heute":"Morgen")+" 20:15";
     const cEl=$("#jb-count");
     if(TJ.phase==="live"){cEl.textContent="LIVE";}
     else if(TJ.phase==="result"){cEl.textContent="🏆";}
+    else if(d<=0){cEl.textContent="GLEICH";}
     else cEl.textContent=fmtLong(d);
-    jb.classList.toggle("hot",d<900000&&d>-3200);
+    jb.classList.toggle("hot",d<900000&&d>-6000);
     $("#jb-pot").textContent=fmtEUR(potOf(JP,TJ,t));
     $("#jb-pl").textContent=joinedAt(JP,TJ,t)+(S.bets[TJ.key]?1:0);
     $("#jb-cta").textContent=S.bets[TJ.key]?(S.bets[TJ.key].done?"Runde vorbei":"Du bist drin ✓"):TJ.phase==="open"?"Für "+fmtEUR(JP_STAKE)+" dabei sein":"Läuft gleich!";
   }
   const h=heroPick(t);
-  if(h){ const Tc=times(h.i,t); const dc=Tc.tGo-t;
-    $("#tc-sub").innerHTML="19 Buzzer · 1 € bis 20K € · Next GO in "+(dc<-3200?"…":'<span class="'+(dc<15000?"hot":"ok")+'">'+mmss(Math.max(0,dc))+"</span>"); }
+  if(h){ const Tc=times(h.i,t); const dc=Tc.tGoBase-t;
+    $("#tc-sub").innerHTML="19 Buzzer · 1 € bis 20K € · Next GO in "+(dc<-6000?"…":'<span class="'+(dc<15000?"hot":"ok")+'">'+mmss(Math.max(0,dc))+"</span>"); }
   let rndSum=0,rndOpen=0;
   for(let k=0;k<RND_STAKES.length;k++){ const ri=RND_BASE+k,TR=timesRnd(ri,t); if(TR.phase==="open"){rndOpen++;rndSum+=potOf(ri,TR,t);} }
   $("#tr-sub").innerHTML=rndOpen>0
@@ -1392,10 +1395,11 @@ function updateJack(t){
   const T=timesJp(t);
   if(jkRefs.pot)jkRefs.pot.textContent=fmtEUR(potOf(JP,T,t));
   if(jkRefs.pl)jkRefs.pl.textContent=joinedAt(JP,T,t)+(S.bets[T.key]?1:0);
-  const d=T.tGo-t;
+  const d=T.tGoBase-t;
   if(jkRefs.cd){
     if(T.phase==="live"){jkRefs.cd.textContent="LIVE";jkRefs.cd.className="v hot";}
     else if(T.phase==="result"){jkRefs.cd.textContent="🏆";jkRefs.cd.className="v";}
+    else if(d<=0){jkRefs.cd.textContent="GLEICH";jkRefs.cd.className="v hot";}
     else{jkRefs.cd.textContent=fmtLong(d);jkRefs.cd.className="v"+(d<900000?" hot":"");}
   }
   const joined=!!S.bets[T.key]&&!S.bets[T.key].done;
@@ -1421,7 +1425,14 @@ function inviteLink(code){
   const base=location.origin+location.pathname+(SRV_OVERRIDE?("?srv="+encodeURIComponent(SRV_OVERRIDE)):"");
   return base+(base.indexOf("?")>=0?"&":"?")+"join="+code;
 }
-function netPriv(m){ NET.lobby=m; if(currentView==="priv")renderPriv(); }
+function netPriv(m){
+  // neue Runde erkannt → Overlay-Flags zurücksetzen
+  if(m.startAt&&m.startAt!==PV.lastStart){ PV.lastStart=m.startAt; PV.done=false; PV.false=false; PV.tapped=false; PV.active=false; }
+  if(!m.startAt)PV.lastStart=null;
+  const wasWaiting=NET.lobby&&!NET.lobby.startAt;
+  NET.lobby=m;
+  if(currentView==="priv")renderPriv();
+}
 function renderPrivLive(){
   const L=NET.lobby;
   if(!L){
@@ -1430,12 +1441,17 @@ function renderPrivLive(){
       '<div class="vtitle">👥 Privater Buzzer</div></div>'+
       '<div class="explain">Eigener Buzzer für dich und deine Freunde. <b style="color:var(--text)">Du gibst das GO.</b></div>'+
       '<div class="eyebrow">Einsatz pro Person</div><div class="choice" id="pv-stakes"></div>'+
-      '<button class="wide-btn" id="pv-create">Buzzer erstellen — '+fmtEUR(pvStake)+" Einsatz</button>";
+      '<button class="wide-btn" id="pv-create">Buzzer erstellen — '+fmtEUR(pvStake)+" Einsatz</button>"+
+      '<div class="eyebrow" style="margin-top:26px">Code hast du? Beitreten</div>'+
+      '<div style="display:flex;gap:8px"><input id="pv-code-in" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" style="flex:1;min-width:0;background:#000;border:1px solid var(--line);color:var(--text);padding:14px;font-size:17px;font-weight:900;letter-spacing:4px;text-transform:uppercase;text-align:center;outline:none;font-family:inherit"><button class="wide-btn" id="pv-joinbtn" style="width:auto;margin:0;padding:0 24px;background:var(--bg);border:1px solid var(--line);color:var(--text)">Beitreten</button></div>';
     $("#pv-back").addEventListener("click",()=>navigate("menu"));
     const sBox=$("#pv-stakes");
     [1,5,10,20,50,100].forEach(v=>{ const b=document.createElement("button"); b.textContent=fmtEUR(v); if(v===pvStake)b.classList.add("sel");
       b.addEventListener("click",()=>{pvStake=v;sBox.querySelectorAll("button").forEach(x=>x.classList.remove("sel"));b.classList.add("sel");$("#pv-create").textContent="Buzzer erstellen — "+fmtEUR(v)+" Einsatz";}); sBox.appendChild(b); });
-    $("#pv-create").addEventListener("click",()=>{ if(S.balance<pvStake){toast("Nicht genug Guthaben — lad kurz auf");openTopup();return;} chats[PRIV]=[]; netSend({t:"privcreate",stake:pvStake}); });
+    $("#pv-create").addEventListener("click",()=>{ chats[PRIV]=[]; netSend({t:"privcreate",stake:pvStake}); });
+    const doJoin=()=>{ const v=$("#pv-code-in").value.trim().toUpperCase(); if(v.length<4){ toast("Code hat 5 Zeichen"); return; } chats[PRIV]=[]; netSend({t:"privjoin",code:v}); };
+    $("#pv-joinbtn").addEventListener("click",doJoin);
+    $("#pv-code-in").addEventListener("keydown",e=>{ if(e.key==="Enter")doJoin(); });
     return;
   }
   const iAmCreator=L.creator===(S.profile&&S.profile.name);
@@ -1452,9 +1468,10 @@ function renderPrivLive(){
     "</div></div>"+
     '<div class="mybets" style="margin:2px 0 14px;flex-wrap:wrap">'+L.members.map(n=>'<span class="mybet" style="border-color:var(--line)">'+esc(n)+(n===L.creator?" 👑":"")+"</span>").join("")+"</div>"+
     (waiting
-      ? (iAmCreator
-          ? '<button class="wide-btn" id="pv-start" style="background:var(--green);color:#04140C">▶ START — alle bereit?</button><button class="wide-btn ghost" id="pv-share">📤 Einladungslink teilen</button><button class="wide-btn ghost" id="pv-cancel">Abbrechen — Einsatz zurück</button>'
-          : '<button class="wide-btn ghost" id="pv-share">📤 Einladungslink teilen</button><div class="explain" style="margin-top:12px">Warte auf das GO von <b style="color:var(--text)">'+esc(L.creator)+'</b>.</div>')
+      ? '<div class="explain" style="margin-top:2px">Code <b style="color:var(--gold);letter-spacing:2px">'+L.code+'</b> — zum Beitreten in der App eingeben.</div>'+
+        (iAmCreator
+          ? '<button class="wide-btn" id="pv-start" style="background:var(--green);color:#04140C">START — Einsatz '+fmtEUR(L.stake)+'</button><button class="wide-btn ghost" id="pv-share">Einladungslink teilen</button><button class="wide-btn ghost" id="pv-cancel">Lobby schließen</button>'
+          : '<button class="wide-btn ghost" id="pv-share">Einladungslink teilen</button><button class="wide-btn ghost" id="pv-cancel">Lobby verlassen</button><div class="explain" style="margin-top:12px">Warte auf den START von <b style="color:var(--text)">'+esc(L.creator)+'</b>.</div>')
       : '')+
     chatBlock("pv","Gruppen-Chat");
   $("#pv-back").addEventListener("click",()=>navigate("menu"));
@@ -1464,26 +1481,35 @@ function renderPrivLive(){
     const link=inviteLink(L.code);
     const txt="Komm in meinen BUZZER! "+fmtEUR(L.stake)+" Einsatz, Schnellster holt alles: "+link;
     if(navigator.share)navigator.share({text:txt}).catch(()=>{});
-    else if(navigator.clipboard){ navigator.clipboard.writeText(link); toast("Einladungslink kopiert — ab in die Gruppe 📤"); }
+    else if(navigator.clipboard){ navigator.clipboard.writeText(link); toast("Einladungslink kopiert — ab in die Gruppe"); }
     else toast("Link: "+link);
   });
   wireChatNet("pv",PRIV);
 }
 function updatePrivLive(t){
   const L=NET.lobby; if(!L||!L.startAt)return;
-  const cd=$("#pv-cd"); if(cd){ const d=L.startAt-t; cd.textContent=d>0?mmss(d):"…"; }
-  // Kurz vor Start Bereitschafts-Overlay öffnen (GO-Signal kommt vom Server)
-  if(!PV.active&&!PV.done&&L.startAt-t<=12000&&L.startAt-t>-1000){ pvArmSuspense(); }
+  const cd=$("#pv-cd"); if(cd){ const d=L.startAt-t; cd.textContent=d>0?mmss(d):"gleich"; }
 }
-function pvArmSuspense(){
-  if(PV.active)return;
-  PV.active=true; PV.tapped=false; PV.false=false; PV.done=false;
+function pvTick(t){ // global — öffnet & aktualisiert das Bereitschafts-Overlay, egal auf welcher Seite man ist
+  const L=NET.lobby; if(!L||!L.startAt||PV.done||PV.false)return;
+  const d=L.startAt-t;
+  if(!PV.active&&d<=15000&&d>-8000)pvOpenOverlay();
+  if(PV.active&&!ovEl.classList.contains("go-bg")){
+    const big=$("#pv-ov-big"),sub=$("#pv-ov-sub");
+    if(big){
+      if(d>0){ big.className="ov-big"; big.textContent=mmss(d); if(sub)sub.textContent="Gleich geht's los"; }
+      else { big.className="ov-big dots"; big.textContent="• • •"; if(sub)sub.textContent="Warte auf Grün — nicht zu früh!"; }
+    }
+  }
+}
+function pvOpenOverlay(){
+  PV.active=true; PV.tapped=false; PV.false=false;
   if(currentView!=="priv")navigate("priv");
   ovEl.classList.remove("go-bg");
-  ovEl.innerHTML='<div class="ov-eyebrow">Privater Buzzer · '+fmtEUR(NET.lobby.stake)+'</div>'+
+  ovEl.innerHTML='<div class="ov-eyebrow">Privat · '+fmtEUR(NET.lobby.stake)+'</div>'+
     '<div class="ov-pot" style="color:var(--gold)">'+fmtEUR(NET.lobby.members.length*NET.lobby.stake)+'</div>'+
     '<div class="ov-players">'+NET.lobby.members.length+' Spieler im Pot</div>'+
-    '<div class="ov-center"><div class="ov-big dots">• • •</div><div id="ov-sub" style="font-size:13px;color:var(--muted);font-weight:700">Gleich … nicht zu früh!</div></div>'+
+    '<div class="ov-center"><div class="ov-big" id="pv-ov-big">–</div><div id="pv-ov-sub" style="font-size:13px;color:var(--muted);font-weight:700"></div></div>'+
     '<div class="ov-hint">Warte auf <b style="color:#fff">GO!</b> Zu früh = Fehlstart.</div>';
   ovEl.classList.add("on");
 }
@@ -1518,7 +1544,7 @@ function pvResult(m){
     '<div class="r-meta">Privat · Pot '+fmtEUR(m.pot)+' · '+((m.ranking||[]).length)+' Spieler · ohne Gebühr</div>';
   ovEl.innerHTML='<div class="res '+(won?"win-r":"")+'">'+inner+'<button class="r-btn" id="ov-close">Weiter</button></div>';
   ovEl.classList.add("on");
-  $("#ov-close").addEventListener("click",()=>{ ovEl.classList.remove("on","go-bg"); ovEl.innerHTML=""; NET.lobby=null; PV.done=false; if(currentView==="priv")renderPriv(); });
+  $("#ov-close").addEventListener("click",()=>{ ovEl.classList.remove("on","go-bg"); ovEl.innerHTML=""; PV.active=false; navigate(NET.lobby?"priv":"menu"); });
   if(won){ confetti(); winSound(); }
 }
 function wireChatNet(pfx,idx){
@@ -1778,15 +1804,16 @@ function updateDetail(t){
   const T=times(i,t);
   if(dRefs.pot)dRefs.pot.textContent=fmtEUR(potOf(i,T,t));
   if(dRefs.pl)dRefs.pl.textContent=joinedAt(i,T,t)+(S.bets[T.key]?1:0);
-  const dGo=T.tGo-t;
+  const dGo=T.tGoBase-t;
   if(dRefs.cd){
     if(T.phase==="result"){dRefs.cd.textContent=mmss(T.end-t);dRefs.cd.className="v";dRefs.cdk.textContent="Neue Runde";}
     else if(T.phase==="live"){dRefs.cd.textContent="LIVE";dRefs.cd.className="v hot";dRefs.cdk.textContent="Jetzt!";}
+    else if(dGo<=0){dRefs.cd.textContent="GLEICH";dRefs.cd.className="v hot";dRefs.cdk.textContent="Gleich grün";}
     else{dRefs.cd.textContent=mmss(dGo);dRefs.cd.className="v"+(dGo<15000?" hot":"");dRefs.cdk.textContent="GO in";}
   }
   // Ring
   if(dRefs.prog){
-    const frac=T.phase==="result"?0:clamp(dGo/(T.tGo-T.start),0,1);
+    const frac=T.phase==="result"?0:clamp(dGo/(T.tGoBase-T.start),0,1);
     dRefs.prog.setAttribute("stroke-dashoffset",(298.4*(1-frac)).toFixed(1));
     dRefs.ring.classList.toggle("joined",!!S.bets[T.key]&&!S.bets[T.key].done);
   }
