@@ -415,7 +415,7 @@ const server=http.createServer((req,res)=>{
   const url=(req.url||"/").split("?")[0];
   if(url==="/api/info"){
     res.writeHead(200,{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"});
-    res.end(JSON.stringify({buzzer:true,build:BUILD,serverNow:now(),online:[...conns].filter(x=>x.token).length}));
+    res.end(JSON.stringify({buzzer:true,build:BUILD,serverNow:now(),online:[...conns].filter(x=>x.token).length,mail:!!(MAIL&&MAIL.apiKey),mailFrom:MAIL?MAIL.from:null}));
     return;
   }
   if(url==="/"||url==="/index.html"){
