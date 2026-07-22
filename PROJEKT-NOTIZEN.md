@@ -81,6 +81,19 @@ Fehlstart-Disqualifikation verhindern Vorab-Tippen.
 - **Ergebnis-Screen weicht automatisch** dem Countdown der nächsten eigenen Runde (checkTakeover
   löst bei `state==="result"` ab); private Live-Runde (PV.active) wird nie überdeckt.
 
+## Datenbank (seit 22.07. — Postgres/Neon)
+
+- **Neon-Postgres** (Region Ohio, beim Render-Server), Zugang via `DATABASE_URL` (Render-ENV;
+  lokal `server/db-config.json`, gitignored). Ohne DATABASE_URL fällt der Server auf data.json zurück.
+- **users**: Konto, Name, E-Mail, Guthaben, Marketing-Einwilligung, Stats, angelegt/zuletzt gesehen.
+  Guthaben ist damit ECHT serverseitig persistent (überlebt Deploys/Neustarts, geräteübergreifend).
+- **events** (Ereignis-Protokoll, append-only): signup/login, consent_marketing, topup (wann+wie viel),
+  bet_placed, round_result (Rang/ms/Gewinn), priv_created/joined/stake/result, email_verified —
+  Basis für alle Auswertungen (Aktivität letzte N Tage, Einzahlungen, Segmente für Mails).
+- **Marketing-Mails**: separate optionale Checkbox im Onboarding („News & Aktionen per E-Mail"),
+  standardmäßig aus, Einwilligung mit Zeitstempel als Event — DSGVO-sauber. NIE in AGB bündeln.
+- Für Echtgeld später: Beträge auf Integer-Cents umstellen, Lösch-/Auskunftsprozess (DSGVO Art. 17).
+
 ## Guthaben-Persistenz (wichtig!)
 
 - Render Free-Tier hat **flüchtigen Speicher**: `server/data.json` (Konten+Guthaben) wird bei
