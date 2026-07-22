@@ -93,6 +93,12 @@ Fehlstart-Disqualifikation verhindern Vorab-Tippen.
 - **Marketing-Mails**: separate optionale Checkbox im Onboarding („News & Aktionen per E-Mail"),
   standardmäßig aus, Einwilligung mit Zeitstempel als Event — DSGVO-sauber. NIE in AGB bündeln.
 - Für Echtgeld später: Beträge auf Integer-Cents umstellen, Lösch-/Auskunftsprozess (DSGVO Art. 17).
+- **Admin-Dashboard** unter `/admin` (Schlüssel: `ADMIN_KEY` in Render-ENV bzw. db-config.json):
+  Kacheln (Nutzer, Neue Nutzer/Monat mit Vormonats-Vergleich, Online, Aktive, Guthaben,
+  Einzahlungen, Geld gewettet, Gewinne ausgezahlt, Runden, Lobbys, Werbe-Opt-ins), 14-Tage-Charts,
+  Top-Listen. Fast jede Kachel ist klickbar → Detail mit Zeitraum-Tabs **7 Tage / Monat / Jahr /
+  Gesamt** (Barchart + Summe + Vergleich zur Vorperiode). Endpunkte: `/api/admin/stats`,
+  `/api/admin/metric?m=<users|active|topups|stakes|payouts|rounds|lobbies>&r=<d7|month|year|all>`.
 
 ## Guthaben-Persistenz (wichtig!)
 

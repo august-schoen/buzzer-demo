@@ -540,6 +540,55 @@ const server=http.createServer((req,res)=>{
     res.end(JSON.stringify({buzzer:true,build:BUILD,serverNow:now(),online:[...conns].filter(x=>x.token).length,mail:!!(MAIL&&MAIL.apiKey),mailFrom:MAIL?MAIL.from:null,db:!!PGPOOL}));
     return;
   }
+  if(url==="/api/admin/metric"){
+    const q=new URL(req.url,"http://x");
+    if(!ADMIN_KEY||q.searchParams.get("key")!==ADMIN_KEY){ res.writeHead(401,{"Content-Type":"application/json"}); res.end('{"error":"key"}'); return; }
+    if(!PGPOOL){ res.writeHead(503,{"Content-Type":"application/json"}); res.end('{"error":"nodb"}'); return; }
+    const M={
+      users:{src:"users",col:"created_at",agg:"COUNT(*)",cond:"",unit:""},
+      active:{src:"events",col:"at",agg:"COUNT(DISTINCT token)",cond:"",unit:""},
+      topups:{src:"events",col:"at",agg:"COALESCE(SUM(amount),0)",cond:" AND type='topup'",unit:"€"},
+      stakes:{src:"events",col:"at",agg:"COALESCE(SUM(amount),0)",cond:" AND type IN('bet_placed','priv_stake')",unit:"€"},
+      payouts:{src:"events",col:"at",agg:"COALESCE(SUM(amount),0)",cond:" AND type IN('round_result','priv_result') AND amount>0",unit:"€"},
+      rounds:{src:"events",col:"at",agg:"COUNT(*)",cond:" AND type IN('round_result','priv_result')",unit:""},
+      lobbies:{src:"events",col:"at",agg:"COUNT(*)",cond:" AND type='priv_created'",unit:""}
+    }[q.searchParams.get("m")];
+    const r=q.searchParams.get("r");
+    if(!M||["d7","month","year","all"].indexOf(r)<0){ res.writeHead(400,{"Content-Type":"application/json"}); res.end('{"error":"param"}'); return; }
+    const LOC="(("+M.col+" AT TIME ZONE 'Europe/Berlin'))";
+    const NOWL="(now() AT TIME ZONE 'Europe/Berlin')";
+    const day=r==="d7"||r==="month";
+    const bucket=day?"day":"month", fmt=day?"DD.MM.":"MM.YY";
+    let from=null,prevFrom=null,prevTo=null;
+    if(r==="d7"){ from="(date_trunc('day',"+NOWL+") - interval '6 days')"; prevFrom="(date_trunc('day',"+NOWL+") - interval '13 days')"; prevTo=from; }
+    if(r==="month"){ from="date_trunc('month',"+NOWL+")"; prevFrom="(date_trunc('month',"+NOWL+") - interval '1 month')"; prevTo=from; }
+    if(r==="year"){ from="date_trunc('year',"+NOWL+")"; prevFrom="(date_trunc('year',"+NOWL+") - interval '1 year')"; prevTo=from; }
+    (async()=>{
+      const win=from?(" AND "+LOC+" >= "+from):"";
+      const series=(await PGPOOL.query(
+        "SELECT to_char(date_trunc('"+bucket+"',"+LOC+"),'"+fmt+"') d, "+M.agg+"::float v FROM "+M.src+" WHERE 1=1"+M.cond+win+" GROUP BY 1 ORDER BY MIN("+LOC+")")).rows;
+      const total=(await PGPOOL.query("SELECT "+M.agg+"::float v FROM "+M.src+" WHERE 1=1"+M.cond+win)).rows[0].v;
+      let prev=null;
+      if(prevFrom)prev=(await PGPOOL.query("SELECT "+M.agg+"::float v FROM "+M.src+" WHERE 1=1"+M.cond+" AND "+LOC+" >= "+prevFrom+" AND "+LOC+" < "+prevTo)).rows[0].v;
+      // Lücken füllen (Tage bzw. Monate ohne Daten = 0)
+      const map={}; for(const x of series)map[x.d]=x.v;
+      const out=[]; const nowB=new Date();
+      const fD=d=>new Intl.DateTimeFormat("de-DE",{day:"2-digit",month:"2-digit",timeZone:"Europe/Berlin"}).format(d);
+      const fM=d=>{ const p=new Intl.DateTimeFormat("de-DE",{month:"2-digit",year:"2-digit",timeZone:"Europe/Berlin"}).formatToParts(d); return p.find(x=>x.type==="month").value+"."+p.find(x=>x.type==="year").value; };
+      if(r==="d7"){ for(let k=6;k>=0;k--){ const l=fD(new Date(Date.now()-k*86400000)); out.push({d:l,v:map[l]||0}); } }
+      else if(r==="month"){ const today=+new Intl.DateTimeFormat("en",{day:"numeric",timeZone:"Europe/Berlin"}).format(nowB); for(let k=today-1;k>=0;k--){ const l=fD(new Date(Date.now()-k*86400000)); out.push({d:l,v:map[l]||0}); } }
+      else if(r==="year"){ const mNow=+new Intl.DateTimeFormat("en",{month:"numeric",timeZone:"Europe/Berlin"}).format(nowB); const yNow=+new Intl.DateTimeFormat("en",{year:"numeric",timeZone:"Europe/Berlin"}).format(nowB); for(let mm=1;mm<=mNow;mm++){ const l=String(mm).padStart(2,"0")+"."+String(yNow%100).padStart(2,"0"); out.push({d:l,v:map[l]||0}); } }
+      else{ // all: von erster Aktivität bis jetzt, monatlich
+        if(series.length){ const [m0,y0]=series[0].d.split(".").map(Number); let mm=m0,yy=2000+y0;
+          const mNow=+new Intl.DateTimeFormat("en",{month:"numeric",timeZone:"Europe/Berlin"}).format(nowB); const yNow=+new Intl.DateTimeFormat("en",{year:"numeric",timeZone:"Europe/Berlin"}).format(nowB);
+          while(yy<yNow||(yy===yNow&&mm<=mNow)){ const l=String(mm).padStart(2,"0")+"."+String(yy%100).padStart(2,"0"); out.push({d:l,v:map[l]||0}); mm++; if(mm>12){mm=1;yy++;} if(out.length>120)break; }
+        }
+      }
+      res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-cache"});
+      res.end(JSON.stringify({series:out,total,prev,unit:M.unit}));
+    })().catch(e=>{ console.error("admin metric:",e.message); res.writeHead(500,{"Content-Type":"application/json"}); res.end('{"error":"fail"}'); });
+    return;
+  }
   if(url==="/api/admin/stats"){
     const q=new URL(req.url,"http://x");
     if(!ADMIN_KEY||q.searchParams.get("key")!==ADMIN_KEY){ res.writeHead(401,{"Content-Type":"application/json"}); res.end('{"error":"key"}'); return; }
@@ -547,7 +596,10 @@ const server=http.createServer((req,res)=>{
     (async()=>{
       const one=async(sql,params)=> (await PGPOOL.query(sql,params||[])).rows;
       const TZ="Europe/Berlin";
-      const [tot,neu7,neu1,balSum,mkt,tupAll,tup7,tup1,rndAll,rnd7,rnd1]=await Promise.all([
+      const MSTART="date_trunc('month',(now() AT TIME ZONE 'Europe/Berlin'))";
+      const ULOC="(created_at AT TIME ZONE 'Europe/Berlin')";
+      const ELOC="(at AT TIME ZONE 'Europe/Berlin')";
+      const [tot,neu7,neu1,balSum,mkt,tupAll,tup7,tup1,rndAll,rnd7,rnd1,stkAll,stk7,payAll,pay7,act1,act7,lobAll,lob7,uMon,uMonPrev]=await Promise.all([
         one("SELECT COUNT(*)::int c FROM users"),
         one("SELECT COUNT(*)::int c FROM users WHERE created_at>now()-interval '7 days'"),
         one("SELECT COUNT(*)::int c FROM users WHERE created_at>now()-interval '1 day'"),
@@ -558,7 +610,17 @@ const server=http.createServer((req,res)=>{
         one("SELECT COUNT(*)::int c, COALESCE(SUM(amount),0)::float s FROM events WHERE type='topup' AND at>now()-interval '1 day'"),
         one("SELECT COUNT(*)::int c FROM events WHERE type IN('round_result','priv_result')"),
         one("SELECT COUNT(*)::int c FROM events WHERE type IN('round_result','priv_result') AND at>now()-interval '7 days'"),
-        one("SELECT COUNT(*)::int c FROM events WHERE type IN('round_result','priv_result') AND at>now()-interval '1 day'")
+        one("SELECT COUNT(*)::int c FROM events WHERE type IN('round_result','priv_result') AND at>now()-interval '1 day'"),
+        one("SELECT COALESCE(SUM(amount),0)::float s FROM events WHERE type IN('bet_placed','priv_stake')"),
+        one("SELECT COALESCE(SUM(amount),0)::float s FROM events WHERE type IN('bet_placed','priv_stake') AND at>now()-interval '7 days'"),
+        one("SELECT COALESCE(SUM(amount),0)::float s FROM events WHERE type IN('round_result','priv_result') AND amount>0"),
+        one("SELECT COALESCE(SUM(amount),0)::float s FROM events WHERE type IN('round_result','priv_result') AND amount>0 AND at>now()-interval '7 days'"),
+        one("SELECT COUNT(DISTINCT token)::int c FROM events WHERE at>now()-interval '1 day'"),
+        one("SELECT COUNT(DISTINCT token)::int c FROM events WHERE at>now()-interval '7 days'"),
+        one("SELECT COUNT(*)::int c FROM events WHERE type='priv_created'"),
+        one("SELECT COUNT(*)::int c FROM events WHERE type='priv_created' AND at>now()-interval '7 days'"),
+        one("SELECT COUNT(*)::int c FROM users WHERE "+ULOC+" >= "+MSTART),
+        one("SELECT COUNT(*)::int c FROM users WHERE "+ULOC+" >= ("+MSTART+" - interval '1 month') AND "+ULOC+" < "+MSTART)
       ]);
       const dayseries=async(sql)=>{
         const rows=await one(sql);
@@ -589,8 +651,12 @@ const server=http.createServer((req,res)=>{
       res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-cache"});
       res.end(JSON.stringify({
         online:[...conns].filter(x=>x.token).length,
-        users:{total:tot[0].c,neu7:neu7[0].c,neu1:neu1[0].c,balance:balSum[0].s,marketing:mkt[0].c},
+        users:{total:tot[0].c,neu7:neu7[0].c,neu1:neu1[0].c,balance:balSum[0].s,marketing:mkt[0].c,month:uMon[0].c,monthPrev:uMonPrev[0].c},
         topups:{all:tupAll[0],d7:tup7[0],d1:tup1[0]},
+        stakes:{all:stkAll[0].s,d7:stk7[0].s},
+        payouts:{all:payAll[0].s,d7:pay7[0].s},
+        actives:{d1:act1[0].c,d7:act7[0].c},
+        lobbies:{all:lobAll[0].c,d7:lob7[0].c},
         rounds:{all:rndAll[0].c,d7:rnd7[0].c,d1:rnd1[0].c},
         charts:{signups:sigD,topups:tupD,rounds:rndD},
         tables:{winners,active,payers,recent}
