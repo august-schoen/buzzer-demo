@@ -304,10 +304,14 @@ function handleMsg(c,m){
   if(m.t==="emailcode"){
     const email=String(m.email||"").trim().toLowerCase();
     if(!EMAIL_RE.test(email)||email.length>80){ send(c,{t:"emailsent",real:false,error:"invalid"}); return; }
-    c.mailTries=(c.mailTries||0)+1;
-    if(c.mailTries>5){ send(c,{t:"emailsent",real:false,error:"limit"}); return; }
+    // Rate-Limit am KONTO (nicht an der Verbindung): max 6 Mails pro Stunde
+    if(!u.mailWin||t-u.mailWin.start>3600000)u.mailWin={start:t,n:0};
+    u.mailWin.n++;
+    if(u.mailWin.n>6){ send(c,{t:"emailsent",real:false,error:"limit"}); save(); return; }
     const code=String(crypto.randomInt(100000,1000000));
-    c.mailCode={email,code,exp:t+10*60000};
+    // Code am KONTO speichern — übersteht Reconnects (App-Wechsel zum Mail-Lesen!) und Server-Neustarts
+    u.mailCode={email,code,exp:t+10*60000};
+    save();
     sendMail(email,"Dein BUZZER-Code: "+code,"Dein Bestätigungscode: "+code+"\n\nGültig für 10 Minuten.").then(ok=>{
       if(ok)send(c,{t:"emailsent",real:true});
       else send(c,{t:"emailsent",real:false,code}); // Demo-Fallback: Code anzeigen
@@ -317,9 +321,9 @@ function handleMsg(c,m){
   if(m.t==="emailverify"){
     const email=String(m.email||"").trim().toLowerCase();
     const code=String(m.code||"").trim();
-    const mc=c.mailCode;
+    const mc=u.mailCode;
     if(mc&&mc.email===email&&mc.code===code&&t<mc.exp){
-      c.mailCode=null;
+      delete u.mailCode;
       u.email=email; save(); // verifizierte E-Mail am Konto speichern
       send(c,{t:"emailok"});
     }else send(c,{t:"emailbad"});

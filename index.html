@@ -443,6 +443,7 @@ input{font:inherit;color:inherit}
     <button class="o-cta" id="onb-verify" disabled>Bestätigen</button>
     <div class="o-err" id="onb-err"></div>
     <div class="o-hint" id="onb-code-hint"></div>
+    <button id="onb-resend" style="background:none;border:none;color:var(--muted);font-size:12px;font-weight:700;text-decoration:underline;margin-top:10px;cursor:pointer;font-family:inherit">Code nochmal senden</button>
   </div>
 
   <div class="o-step" id="onb-step3">
@@ -2072,28 +2073,40 @@ function initOnboarding(){
   $("#onb-email").addEventListener("input",chk1);
   $("#onb-terms").addEventListener("change",chk1);
   chk1();
+  let verifyTimer=null;
+  const verifyReset=()=>{ const b=$("#onb-verify"); b.disabled=false; b.textContent="Bestätigen"; if(verifyTimer){clearTimeout(verifyTimer);verifyTimer=null;} };
   window.onbMailSent=m=>{
+    if(m.error==="limit"){ $("#onb-code-hint").textContent="Zu viele Versuche — warte kurz."; return; }
     if(m.real){ mailReal=true; $("#onb-code-hint").textContent="Schau in dein Postfach (auch im Spam)."; }
     else if(m.code){ mailReal=false; code=m.code; $("#onb-code-hint").textContent="Demo — dein Code lautet: "+m.code; }
     else $("#onb-code-hint").textContent="Senden gerade nicht möglich — Demo-Code: "+code;
   };
   window.onbMailOk=ok=>{
-    const b=$("#onb-verify"); b.disabled=false; b.textContent="Bestätigen";
+    verifyReset();
     if(ok)step(3); else $("#onb-err").textContent="Der Code stimmt nicht — schau nochmal nach.";
   };
-  $("#onb-next1").addEventListener("click",()=>{
+  const requestCode=()=>{
     const email=$("#onb-email").value.trim();
-    $("#onb-mail-echo").textContent=email;
-    if(NET.on){ $("#onb-code-hint").textContent="Code wird geschickt …"; netSend({t:"emailcode",email}); }
-    else $("#onb-code-hint").textContent="Demo — dein Code lautet: "+code;
+    if(NET.on&&netSend({t:"emailcode",email}))$("#onb-code-hint").textContent="Code wird geschickt …";
+    else $("#onb-code-hint").textContent=NET.on?"Senden fehlgeschlagen — nochmal versuchen":"Demo — dein Code lautet: "+code;
+  };
+  $("#onb-next1").addEventListener("click",()=>{
+    $("#onb-mail-echo").textContent=$("#onb-email").value.trim();
+    requestCode();
     step(2);
   });
+  $("#onb-resend").addEventListener("click",requestCode);
   $("#onb-code").addEventListener("input",()=>{ $("#onb-verify").disabled=$("#onb-code").value.trim().length!==6; $("#onb-err").textContent=""; });
   $("#onb-verify").addEventListener("click",()=>{
     const v=$("#onb-code").value.trim();
     if(NET.on){
-      const b=$("#onb-verify"); b.disabled=true; b.textContent="Prüfe …";
-      netSend({t:"emailverify",email:$("#onb-email").value.trim(),code:v});
+      const b=$("#onb-verify");
+      if(!netSend({t:"emailverify",email:$("#onb-email").value.trim(),code:v})){
+        $("#onb-err").textContent="Keine Verbindung — gleich nochmal versuchen."; return;
+      }
+      b.disabled=true; b.textContent="Prüfe …";
+      if(verifyTimer)clearTimeout(verifyTimer);
+      verifyTimer=setTimeout(()=>{ verifyReset(); $("#onb-err").textContent="Keine Antwort — nochmal versuchen."; },12000);
     }
     else if(v===code){ step(3); }
     else{ $("#onb-err").textContent="Der Code stimmt nicht — schau nochmal nach."; }
